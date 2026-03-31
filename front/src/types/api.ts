@@ -123,3 +123,36 @@ export interface MonthlyDigestResponse {
   structured_delta: MonthlyStructuredDelta
   meta?: MonthlyDigestMeta
 }
+
+/** GET /trends/profiles */
+export interface TrendProfileSummary {
+  profile_id: string
+  snapshot_count: number
+  last_period: string
+  last_created_at: string
+  topic_queries: string[]
+  work_count_last: number
+  display_name?: string | null
+  note?: string
+}
+
+/** GET /trends/profiles/:id/series */
+export interface TrendSeriesPoint {
+  period: string
+  created_at: string
+  work_count: number
+  topic_queries: string[]
+  delta_vs_prev?: number | null
+  pct_change_vs_prev?: number | null
+}
+
+export interface TrendSeriesResponse {
+  profile_id: string
+  points: TrendSeriesPoint[]
+}
+
+/** PUT /trends/profiles/:id/label */
+export interface TrendProfileLabelUpdate {
+  display_name: string
+  note?: string
+}

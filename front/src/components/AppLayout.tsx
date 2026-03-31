@@ -8,7 +8,7 @@ import { Separator } from '@/components/ui/separator'
 import { fetchHealth } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { BookSearchIcon, Calendar03Icon, Settings02Icon } from '@hugeicons/core-free-icons'
+import { BookSearchIcon, Calendar03Icon, PresentationBarChart01Icon, Settings02Icon } from '@hugeicons/core-free-icons'
 
 const ROUTE_META: Record<string, { title: string; subtitle: string }> = {
   '/': {
@@ -16,8 +16,12 @@ const ROUTE_META: Record<string, { title: string; subtitle: string }> = {
     subtitle: 'Параметры запроса и обзор литературы по темам',
   },
   '/monthly': {
-    title: 'Ежемесячный',
-    subtitle: 'Снимки, тренды и сравнение периодов',
+    title: 'Периодический',
+    subtitle: 'Снимки, тренды и сравнение периодов (API /digests/periodic)',
+  },
+  '/trends': {
+    title: 'Тренды',
+    subtitle: 'История снимков по profile_id и динамика топа',
   },
 }
 
@@ -103,7 +107,11 @@ export function AppLayout(props: {
           </NavLink>
           <NavLink to="/monthly" className={(p) => cn(navClass(p), 'flex-1 justify-center md:flex-none md:justify-start')}>
             <HugeiconsIcon icon={Calendar03Icon} strokeWidth={2} className="size-[18px] opacity-90" />
-            Ежемесячный
+            Периодический
+          </NavLink>
+          <NavLink to="/trends" className={(p) => cn(navClass(p), 'flex-1 justify-center md:flex-none md:justify-start')}>
+            <HugeiconsIcon icon={PresentationBarChart01Icon} strokeWidth={2} className="size-[18px] opacity-90" />
+            Тренды
           </NavLink>
         </nav>
 

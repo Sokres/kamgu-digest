@@ -3,6 +3,7 @@ import json
 import logging
 import random
 import re
+import time
 from typing import Any
 
 from openai import AsyncOpenAI, RateLimitError
@@ -158,6 +159,7 @@ def _make_openai_async_client() -> tuple[AsyncOpenAI, str]:
 
 
 async def _chat_json_to_dict(system: str, user_payload: dict[str, Any]) -> dict[str, Any]:
+    t_llm0 = time.perf_counter()
     client, log_base = _make_openai_async_client()
     key_src = settings.llm_api_key_source_label()
     logger.info(
@@ -214,6 +216,10 @@ async def _chat_json_to_dict(system: str, user_payload: dict[str, Any]) -> dict[
             getattr(usage, "total_tokens", None),
         )
     raw = _strip_json_fence(completion.choices[0].message.content or "{}")
+    logger.info(
+        "LLM chat round-trip %.2fs (включая ретраи при 429)",
+        time.perf_counter() - t_llm0,
+    )
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:

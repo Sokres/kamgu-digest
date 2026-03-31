@@ -24,7 +24,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
 - В `.env.example` **Semantic Scholar отключён** (`SEMANTIC_SCHOLAR_ENABLED=false`): кандидаты только из OpenAlex, без 429 от SS. Включите `true`, если нужен второй источник.
-- Проверка: `curl -s http://localhost:8080/health`
+- Проверка: `curl -s http://localhost:8080/health` (liveness). Готовность БД снимков: `curl -s http://localhost:8080/health/ready`
 - Тесты: `PYTHONPATH=. pytest tests/`
 - Браузерный фронт (Vite на порту 5173): по умолчанию включён **CORS** для `http://localhost:5173` и `http://127.0.0.1:5173`. Задайте `CORS_ORIGINS` (через запятую) или оставьте пустым, чтобы отключить middleware. Готовый UI: каталог [`../front`](../front/README.md) (`npm run dev` в `front` после запуска API).
 - Пример запроса:
@@ -52,9 +52,9 @@ curl -s http://localhost:8080/digests \
 
 Ответ: `publications_used`, `article_cards`, `digest_ru`, `digest_en`, поле `meta` (счётчики, время, опционально `warnings` при сбое HTTP к источнику).
 
-### Ежемесячный дайджест с трендами (`POST /digests/monthly`)
+### Периодический дайджест с трендами (`POST /digests/periodic`, алиас `POST /digests/monthly`)
 
-Сохраняет **снимок** топ-статей по профилю в **PostgreSQL** (или **SQLite**, если задан `sqlite:///...` в `SNAPSHOT_DATABASE_URL`), сравнивает с предыдущим месяцем и возвращает `structured_delta` (прирост цитирований, вошли/вышли из топ-K, сдвиги долей OpenAlex-concepts) плюс текст от LLM с дисклеймером.
+Сохраняет **снимок** топ-статей по профилю в **PostgreSQL** (или **SQLite**, если задан `sqlite:///...` в `SNAPSHOT_DATABASE_URL`), сравнивает с предыдущим сохранённым периодом и возвращает `structured_delta` (прирост цитирований, вошли/вышли из топ-K, сдвиги долей OpenAlex-concepts) плюс текст от LLM с дисклеймером. Имя пути **`/digests/monthly`** оставлено для совместимости; канонический путь — **`/digests/periodic`** (частота запусков задаётся только внешним планировщиком: месяц, квартал и т.д.).
 
 - Первый запуск по `profile_id` даёт «базовую линию» без сравнения.
 - **Популярность** здесь = изменение `cited_by_count` и ранга внутри вашей выборки, не абсолютный мировой рейтинг.
@@ -63,7 +63,7 @@ curl -s http://localhost:8080/digests \
 Пример:
 
 ```bash
-curl -s http://localhost:8080/digests/monthly \
+curl -s http://localhost:8080/digests/periodic \
   -H "Content-Type: application/json" \
   -H "X-Internal-Key: your-secret-if-set" \
   -d '{
@@ -77,6 +77,16 @@ curl -s http://localhost:8080/digests/monthly \
 ```
 
 **Расписание (раз в месяц):** внешний планировщик (например [Cloud Scheduler](https://cloud.google.com/scheduler) → HTTP `POST` на ваш сервис, или `cron` на Fly.io), то же тело запроса и заголовок секрета. В проде задайте `SNAPSHOT_DATABASE_URL` на управляемый PostgreSQL (или при необходимости `sqlite:////data/snapshots.db` на постоянном томе).
+
+### Дашборд трендов (`GET /trends/...`)
+
+Те же данные, что пишутся в **`digest_snapshots`**, плюс опциональная таблица **`trend_profile_labels`** (человекочитаемые имена). Схема создаётся при первом запросе к трендам или при сохранении снимка.
+
+- **`GET /trends/profiles`** — все `profile_id` с числом снимков, последним периодом и размером топа в последнем снимке.
+- **`GET /trends/profiles/{profile_id}/series`** — помесячно: число работ в топе (`works` в payload), дельта и % к предыдущему сохранённому периоду.
+- **`PUT /trends/profiles/{profile_id}/label`** — подпись и заметка для UI; при **`MONTHLY_DIGEST_CRON_SECRET`** нужен заголовок **`X-Internal-Key`** (как у ежемесячного дайджеста).
+
+Во фронте KamGU: страница **«Тренды»** (`/trends`).
 
 В Swagger не оставляйте **`from_year` / `to_year` равными 0** — это не «любой год»: так отсекаются почти все статьи. Удалите поля или укажите реальные годы; значения `≤ 0` на сервере приводятся к «не задано».
 
@@ -162,7 +172,8 @@ gcloud run deploy digest-agent \
 | `LOG_LEVEL` | `INFO`, `DEBUG`, … |
 | `CORS_ORIGINS` | Origins для браузера (через запятую). Пусто — без CORS. `*` — любой origin (без credentials). По умолчанию в коде — localhost:5173 |
 | `SNAPSHOT_DATABASE_URL` | Снимки: `postgresql://user:pass@host:5432/dbname` (по умолчанию локальный Postgres из `docker compose`) или `sqlite:///./snapshots.db` без Docker |
-| `MONTHLY_DIGEST_CRON_SECRET` | Если не пусто — обязателен заголовок `X-Internal-Key` для `/digests/monthly` |
+| `MONTHLY_DIGEST_CRON_SECRET` | Если не пусто — обязателен заголовок `X-Internal-Key` для `/digests/periodic` и `/digests/monthly` |
+| `DIGEST_RATE_LIMIT_PER_MINUTE` | Лимит запросов к `POST /digests` с одного IP (скользящая минута, `0` = выкл.) |
 
 ## Структура проекта
 

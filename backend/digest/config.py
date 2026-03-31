@@ -46,8 +46,11 @@ class Settings(BaseSettings):
 
     # Ежемесячные снимки: PostgreSQL (прод/крон) или SQLite без Docker — см. SNAPSHOT_DATABASE_URL в README
     snapshot_database_url: str = "postgresql://postgres:postgres@127.0.0.1:5432/kamgu_digest"
-    # Если задан — POST /digests/monthly требует заголовок X-Internal-Key с тем же значением.
+    # Если задан — POST /digests/monthly и /digests/periodic требуют заголовок X-Internal-Key с тем же значением.
     monthly_digest_cron_secret: str = ""
+
+    # Лимит POST /digests на один IP за скользящее окно 60 с (0 = отключено).
+    digest_rate_limit_per_minute: int = 0
 
     # Браузерный фронт (Vite и т.п.): список origin через запятую. Пусто — без CORS middleware.
     # «*» — любой origin (без credentials).

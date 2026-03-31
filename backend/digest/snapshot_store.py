@@ -22,9 +22,15 @@ CREATE TABLE IF NOT EXISTS digest_snapshots (
     payload_json TEXT NOT NULL,
     UNIQUE(profile_id, period)
 );
+CREATE TABLE IF NOT EXISTS trend_profile_labels (
+    profile_id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    note TEXT,
+    updated_at TEXT NOT NULL
+);
 """
 
-CREATE_SQL_POSTGRES = """
+CREATE_SQL_POSTGRES_DIGEST = """
 CREATE TABLE IF NOT EXISTS digest_snapshots (
     id BIGSERIAL PRIMARY KEY,
     profile_id TEXT NOT NULL,
@@ -32,6 +38,15 @@ CREATE TABLE IF NOT EXISTS digest_snapshots (
     created_at TEXT NOT NULL,
     payload_json TEXT NOT NULL,
     UNIQUE(profile_id, period)
+);
+"""
+
+CREATE_SQL_POSTGRES_LABELS = """
+CREATE TABLE IF NOT EXISTS trend_profile_labels (
+    profile_id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    note TEXT,
+    updated_at TEXT NOT NULL
 );
 """
 
@@ -122,7 +137,8 @@ def init_snapshot_schema(conn: sqlite3.Connection | PgConnection) -> None:
     if backend == "sqlite":
         conn.executescript(CREATE_SQL_SQLITE)
     else:
-        conn.execute(CREATE_SQL_POSTGRES)
+        conn.execute(CREATE_SQL_POSTGRES_DIGEST)
+        conn.execute(CREATE_SQL_POSTGRES_LABELS)
 
 
 def fetch_latest_snapshot_before(
@@ -173,3 +189,137 @@ def upsert_snapshot(
                 payload_json = EXCLUDED.payload_json
         """
     conn.execute(sql, (profile_id, period, now, raw))
+
+
+def _payload_topic_and_work_count(payload: dict[str, Any]) -> tuple[list[str], int]:
+    raw_tq = payload.get("topic_queries")
+    if isinstance(raw_tq, list):
+        topic_queries = [str(x).strip() for x in raw_tq if str(x).strip()]
+    else:
+        topic_queries = []
+    works = payload.get("works")
+    work_count = len(works) if isinstance(works, list) else 0
+    return topic_queries, work_count
+
+
+def upsert_profile_label(
+    conn: sqlite3.Connection | PgConnection,
+    profile_id: str,
+    display_name: str,
+    note: str | None,
+) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    backend = _backend_of_conn(conn)
+    ph = _ph(backend)
+    note_v = (note or "").strip()
+    if backend == "sqlite":
+        sql = f"""
+            INSERT INTO trend_profile_labels (profile_id, display_name, note, updated_at)
+            VALUES ({ph}, {ph}, {ph}, {ph})
+            ON CONFLICT(profile_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                note = excluded.note,
+                updated_at = excluded.updated_at
+        """
+    else:
+        sql = f"""
+            INSERT INTO trend_profile_labels (profile_id, display_name, note, updated_at)
+            VALUES ({ph}, {ph}, {ph}, {ph})
+            ON CONFLICT (profile_id) DO UPDATE SET
+                display_name = EXCLUDED.display_name,
+                note = EXCLUDED.note,
+                updated_at = EXCLUDED.updated_at
+        """
+    conn.execute(sql, (profile_id, display_name.strip(), note_v, now))
+
+
+def list_profile_summaries(
+    conn: sqlite3.Connection | PgConnection,
+) -> list[dict[str, Any]]:
+    """По одной строке на profile_id: последний период, счётчик снимков, подпись."""
+    backend = _backend_of_conn(conn)
+    sql = f"""
+        SELECT d.profile_id, d.period, d.created_at, d.payload_json, sc.cnt,
+               l.display_name, l.note
+        FROM digest_snapshots d
+        INNER JOIN (
+            SELECT profile_id, MAX(period) AS mp
+            FROM digest_snapshots
+            GROUP BY profile_id
+        ) t ON d.profile_id = t.profile_id AND d.period = t.mp
+        INNER JOIN (
+            SELECT profile_id, COUNT(*) AS cnt
+            FROM digest_snapshots
+            GROUP BY profile_id
+        ) sc ON d.profile_id = sc.profile_id
+        LEFT JOIN trend_profile_labels l ON l.profile_id = d.profile_id
+        ORDER BY d.profile_id
+    """
+    cur = conn.execute(sql)
+    rows = cur.fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        profile_id, period, created_at, raw_payload, cnt, display_name, note = row
+        try:
+            payload = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+        except json.JSONDecodeError:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        tq, wc = _payload_topic_and_work_count(payload)
+        out.append(
+            {
+                "profile_id": profile_id,
+                "snapshot_count": int(cnt),
+                "last_period": period,
+                "last_created_at": created_at,
+                "topic_queries": tq,
+                "work_count_last": wc,
+                "display_name": display_name,
+                "note": note or "",
+            }
+        )
+    return out
+
+
+def list_period_metrics_for_profile(
+    conn: sqlite3.Connection | PgConnection,
+    profile_id: str,
+) -> list[dict[str, Any]]:
+    """Хронология снимков по profile_id: размер топа (works), дельта к прошлому периоду."""
+    backend = _backend_of_conn(conn)
+    ph = _ph(backend)
+    sql = f"""
+        SELECT period, created_at, payload_json FROM digest_snapshots
+        WHERE profile_id = {ph}
+        ORDER BY period ASC
+    """
+    cur = conn.execute(sql, (profile_id,))
+    rows = cur.fetchall()
+    out: list[dict[str, Any]] = []
+    prev_wc: int | None = None
+    for period, created_at, raw_payload in rows:
+        try:
+            payload = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+        except json.JSONDecodeError:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        tq, wc = _payload_topic_and_work_count(payload)
+        delta = None if prev_wc is None else wc - prev_wc
+        pct: float | None = None
+        if prev_wc is not None:
+            if prev_wc != 0:
+                pct = round(100.0 * (wc - prev_wc) / prev_wc, 2)
+        out.append(
+            {
+                "period": period,
+                "created_at": created_at,
+                "work_count": wc,
+                "topic_queries": tq,
+                "delta_vs_prev": delta,
+                "pct_change_vs_prev": pct,
+            }
+        )
+        prev_wc = wc
+    return out

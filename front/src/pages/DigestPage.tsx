@@ -140,7 +140,8 @@ export function DigestPage() {
           <CardTitle className="text-xl">Параметры дайджеста</CardTitle>
           <CardDescription className="text-pretty">
             Режим «рецензируемый корпус»: OpenAlex (и опционально Semantic Scholar). Режим «веб-обзор»:
-            короткие сниппеты через Tavily + LLM, с отдельным дисклеймером.
+            короткие сниппеты через Tavily + LLM, с отдельным дисклеймером. После отправки запрос может
+            выполняться долго (ориентир 5–15 минут в зависимости от объёма и прокси); не закрывайте вкладку.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -348,7 +349,16 @@ export function DigestPage() {
           <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Результат</h2>
           <p className="mt-1 text-xs text-muted-foreground/90">Текст дайджеста и карточки источников</p>
         </div>
-        <DigestResultView loading={loading} error={error && !data ? error : null} data={data} />
+        <DigestResultView
+          loading={loading}
+          loadingHint={
+            loading
+              ? 'Идёт сбор публикаций и вызов LLM — это может занять несколько минут. Оставьте страницу открытой.'
+              : undefined
+          }
+          error={error && !data ? error : null}
+          data={data}
+        />
       </section>
     </div>
   )

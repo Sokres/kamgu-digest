@@ -5,6 +5,7 @@ import { AppLayout } from '@/components/AppLayout'
 import { getApiBaseUrl } from '@/lib/settings'
 import { DigestPage } from '@/pages/DigestPage'
 import { MonthlyPage } from '@/pages/MonthlyPage'
+import { TrendsPage } from '@/pages/TrendsPage'
 
 function Layout() {
   const [apiBase, setApiBase] = useState(getApiBaseUrl)
@@ -23,6 +24,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route index element={<DigestPage />} />
           <Route path="monthly" element={<MonthlyPage />} />
+          <Route path="trends" element={<TrendsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

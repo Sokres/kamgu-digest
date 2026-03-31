@@ -13,7 +13,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { ArticleCard, DigestMeta, DigestResponse, PublicationInput } from '@/types/api'
+import type {
+  ArticleCard,
+  DigestMeta,
+  DigestResponse,
+  MonthlyDigestResponse,
+  PublicationInput,
+} from '@/types/api'
 
 function MetaBlock({ meta }: { meta?: DigestMeta }) {
   if (!meta) return null
@@ -173,16 +179,25 @@ function DigestText({ text }: { text: string }) {
 
 export function DigestResultView(props: {
   loading?: boolean
+  loadingHint?: string
   error?: string | null
-  data?: DigestResponse | null
+  data?: DigestResponse | MonthlyDigestResponse | null
 }) {
-  const { loading, error, data } = props
+  const { loading, loadingHint, error, data } = props
 
   if (loading) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="h-48 w-full" />
+        {loadingHint ? (
+          <p className="text-sm text-muted-foreground leading-relaxed">{loadingHint}</p>
+        ) : null}
+        <Skeleton className="h-10 w-full max-w-md" />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-40 w-full" />
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-32 w-full" />
+        </div>
       </div>
     )
   }

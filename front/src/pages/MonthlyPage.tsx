@@ -126,10 +126,13 @@ export function MonthlyPage() {
     <div className="mx-auto max-w-4xl space-y-10 pb-8">
       <Card className="border-border/70 shadow-sm">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-xl">Ежемесячный дайджест с трендами</CardTitle>
+          <CardTitle className="text-xl">Периодический дайджест с трендами</CardTitle>
           <CardDescription className="text-pretty">
-            Снимок в SQLite на сервере, сравнение с прошлым периодом и LLM-текст. Если на бэкенде задан
-            секрет, передайте его в настройках или в поле ниже.
+            API: <code className="rounded bg-muted px-1 py-0.5 text-xs">POST /digests/periodic</code> (совместимо с{' '}
+            <code className="rounded bg-muted px-1 py-0.5 text-xs">/digests/monthly</code>). Частота запусков
+            (месяц, квартал и т.д.) задаётся внешним планировщиком. Снимок в БД на сервере, сравнение с прошлым
+            периодом и LLM-текст. Запрос может длиться 5–15 минут. Если на бэкенде задан секрет, передайте его в
+            настройках или в поле ниже.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -269,7 +272,7 @@ export function MonthlyPage() {
             ) : null}
 
             <Button type="submit" disabled={loading} size="lg" className="min-w-[240px]">
-              {loading ? 'Формирование…' : 'Запустить ежемесячный дайджест'}
+              {loading ? 'Формирование…' : 'Запустить периодический дайджест'}
             </Button>
           </form>
         </CardContent>
@@ -298,6 +301,11 @@ export function MonthlyPage() {
         ) : null}
         <DigestResultView
           loading={loading}
+          loadingHint={
+            loading
+              ? 'Снимок и сравнение с предыдущим периодом плюс LLM — ориентир 5–15 минут. Не закрывайте вкладку.'
+              : undefined
+          }
           error={error && !data ? error : null}
           data={data ?? undefined}
         />

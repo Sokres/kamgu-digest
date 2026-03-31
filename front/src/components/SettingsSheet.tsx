@@ -46,7 +46,7 @@ export function SettingsSheet(props: {
           <SheetTitle>Настройки</SheetTitle>
           <SheetDescription>
             Базовый URL API и опциональный ключ для{' '}
-            <code className="text-xs">POST /digests/monthly</code> (если на сервере задан секрет).
+            <code className="text-xs">POST /digests/periodic</code> (если на сервере задан секрет).
           </SheetDescription>
         </SheetHeader>
         <div className="space-y-2">
@@ -60,7 +60,7 @@ export function SettingsSheet(props: {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="monthly-key">X-Internal-Key (ежемесячный дайджест)</Label>
+          <Label htmlFor="monthly-key">X-Internal-Key (периодический дайджест и подписи трендов)</Label>
           <Input
             id="monthly-key"
             value={monthlyKey}

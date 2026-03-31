@@ -143,7 +143,11 @@ class SnapshotWorkRecord(BaseModel):
 
 
 class MonthlyDigestRequest(BaseModel):
-    """Запрос ежемесячного дайджеста с трендами (нужна БД снимков)."""
+    """Периодический дайджест со снимками и трендами (нужна БД снимков).
+
+    Используйте POST /digests/periodic (или устаревший /digests/monthly). Периодичность
+    (месяц, квартал и т.д.) задаётся внешним cron/планировщиком, не этим API.
+    """
 
     profile_id: str = Field(..., min_length=1, max_length=128)
     topic_queries: list[str] = Field(
@@ -237,3 +241,41 @@ class MonthlyDigestResponse(BaseModel):
     digest_en: str
     structured_delta: MonthlyStructuredDelta
     meta: MonthlyDigestMeta = Field(default_factory=MonthlyDigestMeta)
+
+
+class TrendProfileSummary(BaseModel):
+    """Сводка по profile_id из digest_snapshots + опциональная подпись."""
+
+    profile_id: str
+    snapshot_count: int
+    last_period: str
+    last_created_at: str
+    topic_queries: list[str] = Field(default_factory=list)
+    work_count_last: int = Field(
+        0,
+        description="Число работ в последнем снимке (длина works в payload).",
+    )
+    display_name: str | None = Field(
+        None,
+        description="Человекочитаемое имя из trend_profile_labels.",
+    )
+    note: str = ""
+
+
+class TrendSeriesPoint(BaseModel):
+    period: str
+    created_at: str
+    work_count: int
+    topic_queries: list[str] = Field(default_factory=list)
+    delta_vs_prev: int | None = None
+    pct_change_vs_prev: float | None = None
+
+
+class TrendSeriesResponse(BaseModel):
+    profile_id: str
+    points: list[TrendSeriesPoint]
+
+
+class TrendProfileLabelUpdate(BaseModel):
+    display_name: str = Field(..., min_length=1, max_length=160)
+    note: str = Field("", max_length=2000)

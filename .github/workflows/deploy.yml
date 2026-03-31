@@ -1,11 +1,24 @@
 name: Deploy
 
 # CD: SSH на сервер и ./deploy/remote-update.sh (git pull + docker compose).
-# Запуск вручную: Actions → Deploy → Run workflow.
-# Нужны secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PATH.
+# Секреты: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PATH (см. deploy/README.md).
+#
+# Автодеплой: push в main при изменениях в backend/front/deploy/compose.
+# Вручную: Actions → Deploy → Run workflow.
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "front/**"
+      - "deploy/**"
+      - "docker-compose.prod.yml"
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   deploy:
