@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: kamgu_digest
+    ports:
+      - "5432:5432"
+    volumes:
+      - kamgu_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kamgu_digest"]
+      interval: 3s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  kamgu_pgdata:

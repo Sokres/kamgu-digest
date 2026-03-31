@@ -1,0 +1,12 @@
+# Пример: API на поддомене, фронт на другом поддомене.
+# Установите Caddy на хосте, подставьте домены и пути к dist.
+#
+# api.example.com {
+#   reverse_proxy 127.0.0.1:8080
+# }
+#
+# app.example.com {
+#   root * /var/www/kamgu/front/dist
+#   file_server
+#   try_files {path} /index.html
+# }

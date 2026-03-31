@@ -1,0 +1,17 @@
+stages:
+  - test
+
+backend:test:
+  stage: test
+  image: python:3.12-slim-bookworm
+  script:
+    - pip install -r backend/requirements.txt
+    - cd backend && PYTHONPATH=. pytest tests/ -q
+
+frontend:test:
+  stage: test
+  image: node:22-bookworm-slim
+  script:
+    - cd front && npm ci
+    - cd front && npm run lint
+    - cd front && npm run build
