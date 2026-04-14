@@ -145,6 +145,13 @@ npm ci && npm run build
 
 На VPS один раз установите Node **20+** (например [NodeSource](https://github.com/nodesource/distributions) или пакет `nodejs` из дистрибутива). Без `npm` скрипт только предупредит в логе и обновит API в Docker.
 
+### Интерфейс на сайте «старый», API уже новый
+
+1. В логе деплоя (GitHub Actions → job **Deploy** или ручной `bash deploy/remote-update.sh`) должны быть строки **`сборка фронта`** и **`фронт собран`**. Если видите **`фронт НЕ собран`** — в **`/opt/kamgu/.env`** (корень репо, не `backend/.env`) добавьте **`VITE_API_BASE_URL=https://ваш-api...`** и при необходимости установите **`npm`**.
+2. **Caddy/Nginx** для домена приложения должны отдавать статику из **`/opt/kamgu/front/dist`** (или из **`FRONT_STATIC_ROOT`**, если его задали). Если `root` указывает на другой каталог — сайт останется старым.
+3. Сбросьте кэш браузера или откройте сайт в режиме инкогнито.
+4. Проверка на сервере: `ls -la /opt/kamgu/front/dist/assets/` — время файлов должно совпадать с последним деплоем.
+
 ## 6. CI/CD
 
 - **CI:** GitHub Actions [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) — тесты бэкенда и сборка фронта.
