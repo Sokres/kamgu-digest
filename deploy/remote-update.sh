@@ -6,18 +6,34 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 git pull --ff-only
 
+# Одна строка KEY=value из .env без `source` (иначе bash ломается на пробелах/кавычках в произвольных полях).
+_read_dotenv_key() {
+  local key="$1" file="$2" line val
+  line=$(grep -E "^${key}=" "$file" 2>/dev/null | tail -n1) || return 1
+  val="${line#"${key}="}"
+  if [[ "$val" =~ ^\".*\"$ ]]; then
+    val="${val:1:-1}"
+  elif [[ "$val" =~ ^\'.*\'$ ]]; then
+    val="${val:1:-1}"
+  fi
+  printf '%s' "$val"
+}
+
+# Переменные для Vite подхватываем только так — полный `source .env` недопустим (напр. описания с пробелами).
+if [ -f .env ]; then
+  _dbf=$(_read_dotenv_key DEPLOY_BUILD_FRONT .env 2>/dev/null || true)
+  [ -n "$_dbf" ] && export DEPLOY_BUILD_FRONT="$_dbf"
+  export VITE_API_BASE_URL="$(_read_dotenv_key VITE_API_BASE_URL .env 2>/dev/null || true)"
+  export VITE_MONTHLY_INTERNAL_KEY="$(_read_dotenv_key VITE_MONTHLY_INTERNAL_KEY .env 2>/dev/null || true)"
+  export FRONT_STATIC_ROOT="$(_read_dotenv_key FRONT_STATIC_ROOT .env 2>/dev/null || true)"
+else
+  echo "remote-update: предупреждение: нет файла $ROOT/.env — задайте VITE_API_BASE_URL и др." >&2
+fi
+
 # Сборка Vite: нужны Node/npm на сервере и VITE_API_BASE_URL в корневом .env (см. deploy/README.md).
 # Отключить: DEPLOY_BUILD_FRONT=0 в .env или в окружении.
 echo "remote-update: шаг фронта (Vite)…"
 if [ "${DEPLOY_BUILD_FRONT:-1}" != "0" ] && command -v npm >/dev/null 2>&1; then
-  if [ -f .env ]; then
-    set -a
-    # shellcheck disable=SC1091
-    source .env
-    set +a
-  else
-    echo "remote-update: предупреждение: нет файла $ROOT/.env — переменные VITE_* не подгрузятся" >&2
-  fi
   if [ -z "${VITE_API_BASE_URL:-}" ]; then
     echo "remote-update: фронт НЕ собран: в $ROOT/.env нет VITE_API_BASE_URL=... (нужен URL API, напр. https://api.example.com). Интерфейс на сайте не обновится, пока не зададите и не пересоберёте." >&2
   else
