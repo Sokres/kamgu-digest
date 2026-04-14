@@ -145,6 +145,8 @@ npm ci && npm run build
 
 На VPS один раз установите Node **20+** (например [NodeSource](https://github.com/nodesource/distributions) или пакет `nodejs` из дистрибутива). Без `npm` скрипт только предупредит в логе и обновит API в Docker.
 
+Если в логе **`tsc: not found`** или **`vite: not found`**, на хосте, скорее всего, **`NODE_ENV=production`**: тогда `npm ci` не ставит **devDependencies** (TypeScript, Vite). Скрипт `remote-update.sh` перед `npm ci` выставляет **`NODE_ENV=development`**, перед `npm run build` — **`production`**. Предупреждения **`TAR_ENTRY_ERROR`** при установке иногда лечатся удалением каталога **`front/node_modules`** и повторным деплоем.
+
 ### Интерфейс на сайте «старый», API уже новый
 
 1. В логе деплоя (GitHub Actions → job **Deploy** или ручной `bash deploy/remote-update.sh`) должны быть строки **`сборка фронта`** и **`фронт собран`**. Если видите **`фронт НЕ собран`** — в **`/opt/kamgu/.env`** (корень репо, не `backend/.env`) добавьте **`VITE_API_BASE_URL=https://ваш-api...`** и при необходимости установите **`npm`**.

@@ -48,7 +48,14 @@ if [ "${DEPLOY_BUILD_FRONT:-1}" != "0" ] && command -v npm >/dev/null 2>&1; then
     echo "remote-update: фронт НЕ собран: в $ROOT/.env нет VITE_API_BASE_URL=... (нужен URL API, напр. https://api.example.com). Интерфейс на сайте не обновится, пока не зададите и не пересоберёте." >&2
   else
     echo "remote-update: сборка фронта (npm ci && npm run build), API в бандле: ${VITE_API_BASE_URL}"
-    (cd front && npm ci && npm run build)
+    # На серверах часто NODE_ENV=production — тогда npm ci не ставит devDependencies (typescript, vite), и падает tsc/vite.
+    (
+      cd front
+      export NODE_ENV=development
+      npm ci
+      export NODE_ENV=production
+      npm run build
+    )
     echo "remote-update: фронт собран: $ROOT/front/dist (проверьте root в Caddy/Nginx на этот каталог или на FRONT_STATIC_ROOT)"
     if [ -n "${FRONT_STATIC_ROOT:-}" ]; then
       echo "remote-update: копирование dist → $FRONT_STATIC_ROOT"
