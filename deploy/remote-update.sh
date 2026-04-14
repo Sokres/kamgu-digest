@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 # Запуск на сервере из каталога с клоном репозитория (например /opt/kamgu).
 # git pull → (опционально) сборка фронта → docker compose для API.
+#
+# Важно: при `bash deploy/remote-update.sh` bash читает файл в память один раз.
+# `git pull` обновляет скрипт на диске, но дальше выполняется СТАРАЯ версия — поэтому
+# после pull делаем exec, чтобы заново запустить актуальный скрипт с диска.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SELF="$ROOT/deploy/remote-update.sh"
 cd "$ROOT"
-git pull --ff-only
+
+if [ -z "${REMOTE_UPDATE_REEXEC:-}" ]; then
+  git pull --ff-only
+  export REMOTE_UPDATE_REEXEC=1
+  exec bash "$SELF"
+fi
 
 # Одна строка KEY=value из .env без `source` (иначе bash ломается на пробелах/кавычках в произвольных полях).
 _read_dotenv_key() {
