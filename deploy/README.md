@@ -135,14 +135,20 @@ export VITE_API_BASE_URL="https://api.example.com"   # или ваш URL
 npm ci && npm run build
 ```
 
-Скопируйте `front/dist` на сервер и раздавайте через прокси как статику.
+Скопируйте `front/dist` на сервер и раздавайте через прокси как статику **или** настройте автосборку при деплое (следующий раздел).
 
 На бэкенде в `.env` укажите `CORS_ORIGINS` со схемой и хостом страницы (например `https://app.example.com`), либо осознанно `*` только для внутренних тестов.
+
+### Автосборка фронта на сервере (remote-update)
+
+Скрипт [remote-update.sh](remote-update.sh) после `git pull` при наличии **Node.js/npm** выполняет `npm ci && npm run build` в `front/`, если в **корневом** `.env` задан **`VITE_API_BASE_URL`** (без завершающего слэша), например `https://api.24msg.ru`. Итоговая статика — в `front/dist`; укажите этот путь в Caddy/Nginx (`root`) или задайте **`FRONT_STATIC_ROOT`** — тогда `dist` синхронизируется туда (`rsync`, пакет `rsync` должен быть установлен). Отключить сборку фронта: **`DEPLOY_BUILD_FRONT=0`**.
+
+На VPS один раз установите Node **20+** (например [NodeSource](https://github.com/nodesource/distributions) или пакет `nodejs` из дистрибутива). Без `npm` скрипт только предупредит в логе и обновит API в Docker.
 
 ## 6. CI/CD
 
 - **CI:** GitHub Actions [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) — тесты бэкенда и сборка фронта.
-- **CD:** [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) — SSH на сервер, выполняется [remote-update.sh](remote-update.sh) (`git pull` + `docker compose up -d --build`).
+- **CD:** [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) — SSH на сервер, выполняется [remote-update.sh](remote-update.sh) (`git pull`, при настройке — сборка фронта, затем `docker compose up -d --build`).
 - **Проверка API:** [`.github/workflows/healthcheck.yml`](../.github/workflows/healthcheck.yml) — раз в 10 минут запрос к URL из переменной `API_HEALTH_URL`.
 
 ### Настройка автодеплоя в GitHub
