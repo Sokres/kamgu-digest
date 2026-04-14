@@ -125,6 +125,26 @@ docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 
 На том же хосте API слушает `127.0.0.1:8080` (см. `docker-compose.prod.yml`). Фронт — статика после `npm run build` в каталоге `front/dist` (укажите путь в конфиге прокси).
 
+### Как посмотреть конфиг **Caddy** на сервере
+
+Обычно главный файл — **`/etc/caddy/Caddyfile`**. Нужен **`sudo`**:
+
+```bash
+sudo cat /etc/caddy/Caddyfile
+```
+
+Найдите блок с вашим доменом приложения (например `kamgu.24msg.ru` `{` … `}`). Для SPA смотрите строки **`root * /путь/к/front/dist`**, **`file_server`**, **`try_files {path} /index.html`**. Путь после **`root`** должен совпадать с **`/opt/kamgu/front/dist`** (или с каталогом, куда копирует **`FRONT_STATIC_ROOT`**).
+
+Быстрый поиск по домену и по `root`:
+
+```bash
+sudo grep -RniE 'kamgu|24msg|root \*' /etc/caddy/ 2>/dev/null
+```
+
+После правок: **`sudo caddy validate --config /etc/caddy/Caddyfile`** и **`sudo systemctl reload caddy`** (или `restart`).
+
+Если Caddy в **Docker**, смотрите смонтированный Caddyfile в `docker compose` / `docker inspect` контейнера.
+
 ## 5. Фронтенд (Vite)
 
 При сборке задайте URL API:
@@ -150,9 +170,56 @@ npm ci && npm run build
 ### Интерфейс на сайте «старый», API уже новый
 
 1. В логе деплоя (GitHub Actions → job **Deploy** или ручной `bash deploy/remote-update.sh`) должны быть строки **`сборка фронта`** и **`фронт собран`**. Если видите **`фронт НЕ собран`** — в **`/opt/kamgu/.env`** (корень репо, не `backend/.env`) добавьте **`VITE_API_BASE_URL=https://ваш-api...`** и при необходимости установите **`npm`**.
-2. **Caddy/Nginx** для домена приложения должны отдавать статику из **`/opt/kamgu/front/dist`** (или из **`FRONT_STATIC_ROOT`**, если его задали). Если `root` указывает на другой каталог — сайт останется старым.
+2. **Caddy/Nginx** для домена приложения должны отдавать статику из **`/opt/kamgu/front/dist`** (или из **`FRONT_STATIC_ROOT`**, если его задали). Типичная ошибка: в Caddy стоит **`root * /var/www/kamgu/front/dist`**, а `remote-update.sh` собирает в **`/opt/kamgu/front/dist`** — тогда деплой «зелёный», а интерфейс не меняется. Исправление: либо в Caddy указать **`root * /opt/kamgu/front/dist`** и `sudo systemctl reload caddy`, либо в корневом `.env` задать **`FRONT_STATIC_ROOT=/var/www/kamgu/front/dist`**, чтобы скрипт копировал `dist` в каталог из `root`.
 3. Сбросьте кэш браузера или откройте сайт в режиме инкогнито.
 4. Проверка на сервере: `ls -la /opt/kamgu/front/dist/assets/` — время файлов должно совпадать с последним деплоем.
+
+### Проверка на сервере: фронт собрался и тот же путь, что у Caddy/Nginx
+
+Подключитесь по SSH под пользователем деплоя, **`cd` в каталог клона** (например `/opt/kamgu`). Дальше по шагам.
+
+**1. Есть ли свежая сборка на диске**
+
+```bash
+test -f front/dist/index.html && echo "dist есть" || echo "dist НЕТ — сборка не выполнялась или упала"
+ls -la front/dist/index.html
+find front/dist/assets -name '*.js' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -3
+# или без find -printf (macOS): ls -lt front/dist/assets/*.js | head -5
+```
+
+Даты файлов должны быть **несколько минут/часов назад**, в момент последнего успешного деплоя. Если `index.html` старше нескольких дней — фронт **не пересобирался** (смотрите лог job **Deploy** в GitHub: есть ли строки **`сборка фронта`** / **`фронт собран`**, нет ли **`фронт НЕ собран`** или **`npm не найден`**).
+
+**2. Задан ли URL API для сборки**
+
+```bash
+grep -E '^VITE_API_BASE_URL=' .env || echo "Нет VITE_API_BASE_URL — скрипт пропускает npm run build"
+grep -E '^DEPLOY_BUILD_FRONT=' .env || true
+```
+
+Без **`VITE_API_BASE_URL=`** в **корневом** `.env` скрипт **намеренно не собирает** фронт.
+
+**3. Совпадает ли каталог с тем, откуда отдаёт сайт**
+
+Узнайте **`root`** (или `alias`) для домена приложения в **Caddy** или **Nginx**. Он должен указывать на **`…/front/dist`** внутри клона **или** на каталог **`FRONT_STATIC_ROOT`**, если вы его задали в `.env`:
+
+```bash
+grep -E '^FRONT_STATIC_ROOT=' .env || echo "FRONT_STATIC_ROOT не задан — статика должна быть в front/dist репозитория"
+```
+
+Если в конфиге прокси, например, `/var/www/kamgu/dist`, а сборка лежит в `/opt/kamgu/front/dist` и **`FRONT_STATIC_ROOT` не задан** — в браузере будет **старая** копия из `/var/www/...`.
+
+**4. Совпадает ли имя файла JS в HTML с файлами на диске**
+
+```bash
+grep -oE 'assets/[^"]+\.js' front/dist/index.html | head -3
+ls front/dist/assets/ | head -10
+```
+
+Откройте сайт в браузере → **Просмотр кода** / **Network** → посмотрите путь к `*.js`. Имя вроде `index-xxxxx.js` должно **совпадать** с тем, что в `front/dist/index.html` на сервере. Если в браузере запрашивается другой хеш — кэш или другой `root`.
+
+**5. Кэш**
+
+В режиме **инкогнито** или с отключённым кэшем (DevTools) откройте страницу ещё раз.
 
 ### Ошибка `.env: line N: …: command not found` при деплое
 
