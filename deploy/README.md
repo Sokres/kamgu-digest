@@ -46,7 +46,7 @@ chmod 600 ~/.ssh/authorized_keys
 Выйдите с сервера. С локальной машины проверьте вход:
 
 ```bash
-ssh -i ~/.ssh/kamgu_vps deploy@IP_СЕРВЕРА
+ssh -i ~/.ssh/kamgu_vps deploy@85.239.60.115
 ```
 
 При необходимости в `~/.ssh/config` на клиенте:
@@ -157,7 +157,56 @@ npm ci && npm run build
 | `DEPLOY_SSH_KEY` | Содержимое **приватного** ключа (файл `~/.ssh/kamgu_vps` целиком, включая `BEGIN`/`END`) |
 | `DEPLOY_PATH` | `/opt/kamgu` — каталог, где на сервере лежит `git clone` |
 
-3. На сервере в `/opt/kamgu` должен быть настроен доступ к GitHub: **HTTPS** с токеном или **SSH** с [deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys) / ключом пользователя, иначе `git pull` в `remote-update.sh` не сработает.
+3. **Доступ Git с сервера к GitHub (обязательно для `git pull`).** Секреты `DEPLOY_*` в репозитории нужны только тому, чтобы **GitHub Actions подключался к VPS по SSH**. Отдельно на **самом сервере**, в каталоге клона (`DEPLOY_PATH`, чаще всего `/opt/kamgu`), пользователь `DEPLOY_USER` при выполнении [remote-update.sh](remote-update.sh) запускает `git pull --ff-only`. Для **приватного** репозитория (или если без учётных данных `git` не может сходить на GitHub) этот шаг завершится ошибкой, пока не настроена аутентификация **между сервером и GitHub**.
+
+   Выберите один из вариантов и проверьте его **до** того, как полагаться на автодеплой.
+
+   **Вариант A — HTTPS + Personal Access Token**
+
+   - В GitHub: **Settings → Developer settings → Personal access tokens** — создайте токен с правом читать репозиторий: для **classic** достаточно scope `repo` (приватный репозиторий); для **fine-grained** — доступ к нужному репо, разрешение **Contents: Read-only**.
+   - На сервере под пользователем деплоя:
+     - Убедитесь, что `origin` указывает на HTTPS: `cd /opt/kamgu && git remote -v` (должно быть `https://github.com/...`).
+     - Сохраните учётные данные (пример через `~/.git-credentials`, файл только для пользователя `deploy`, права `600`):
+
+       ```bash
+       cd /opt/kamgu
+       printf 'https://%s:%s@github.com\n' "ВАШ_GITHUB_LOGIN" "ВАШ_ТОКЕН" >> ~/.git-credentials
+       chmod 600 ~/.git-credentials
+       git config --global credential.helper store
+       ```
+
+       Вместо логина GitHub допускает и вариант с фиксированным именем `git` и токеном в качестве пароля — см. [документацию](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token).
+
+     - Проверка: `git fetch` и `git pull --ff-only` в `/opt/kamgu` без запроса пароля.
+
+   **Вариант B — SSH: [deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys)** (удобно для сервера: ключ только у этого репозитория)
+
+   - На сервере сгенерируйте пару **без пароля** и не переиспользуйте ключ от входа по SSH в систему:
+
+     ```bash
+     ssh-keygen -t ed25519 -f ~/.ssh/github_kamgu_deploy -N "" -C "kamgu deploy"
+     ```
+
+   - Публичный ключ (`~/.ssh/github_kamgu_deploy.pub`) добавьте в **репозиторий** на GitHub: **Settings → Deploy keys → Add deploy key**, включите **Allow write access** только если осознанно нужен push с сервера (для `git pull` достаточно read-only).
+   - Настройте SSH для хоста `github.com` и переключите `origin` на SSH:
+
+     ```text
+     # ~/.ssh/config
+     Host github.com
+       HostName github.com
+       User git
+       IdentityFile ~/.ssh/github_kamgu_deploy
+       IdentitiesOnly yes
+     ```
+
+     ```bash
+     cd /opt/kamgu
+     git remote set-url origin git@github.com:OWNER/REPO.git
+     ssh -T git@github.com
+     git pull --ff-only
+     ```
+
+   **Вариант C — SSH-ключ пользователя GitHub** — если `origin` уже через `git@github.com:...` и на сервере лежит **ваш** приватный ключ, сопоставленный с ключом в профиле GitHub. Для продакшена чаще предпочитают отдельный **deploy key**, чтобы компрометация сервера не трогала ваш личный доступ ко всем репозиториям.
 
 4. После push в ветку **`main`** (если менялись `backend/`, `front/`, `deploy/` или `docker-compose.prod.yml`) workflow **Deploy** запустится сам. Вручную: вкладка **Actions** → **Deploy** → **Run workflow**.
 
