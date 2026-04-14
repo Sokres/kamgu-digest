@@ -104,7 +104,18 @@ cp backend/.env.example .env
 nano .env   # ключи LLM, пароль БД, CORS
 ```
 
-Файл `.env` в корне репозитория не коммитится. Переменные `POSTGRES_*` нужны Compose для сервиса `postgres`. Для контейнера `api` URL снимков задаётся в [docker-compose.prod.yml](../docker-compose.prod.yml) (`SNAPSHOT_DATABASE_URL` на хост `postgres`); при необходимости закомментируйте `SNAPSHOT_DATABASE_URL` в `.env`, чтобы не путаться со старым `127.0.0.1`.
+Файл `.env` в корне репозитория не коммитится. Переменные `POSTGRES_*` нужны Compose для сервиса `postgres`. Для контейнера `api` в **`.env` обязательна строка `SNAPSHOT_DATABASE_URL`** — подключение к сервису `postgres` по внутренней сети (не `127.0.0.1`).
+
+**Пароль и спецсимволы:** в URL вида `postgresql://user:password@host` символы **`@`, `:`, `/`, `?`** в пароле **ломают** разбор строки (ошибка вроде `failed to resolve host '"...@postgres'`). Сгенерируйте корректный URL из текущего `.env`:
+
+```bash
+cd /opt/kamgu   # или корень клона
+python3 deploy/snapshot_dsn.py
+```
+
+Добавьте в `.env` строку **`SNAPSHOT_DATABASE_URL=`** с выводом скрипта (одна строка, без пробелов вокруг `=`). Альтернатива — задать **`POSTGRES_PASSWORD`** только из букв и цифр без `@` и `:`, тогда можно собрать URL вручную.
+
+Скрипт: [snapshot_dsn.py](snapshot_dsn.py).
 
 ## 3. Запуск API и PostgreSQL
 

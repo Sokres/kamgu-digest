@@ -25,7 +25,9 @@ services:
       - path: .env
         required: false
     environment:
-      SNAPSHOT_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kamgu_digest}
+      # Задайте в корневом .env (пароль с символами @ : / ? должен быть %-кодирован).
+      # Сгенерировать: python3 deploy/snapshot_dsn.py
+      SNAPSHOT_DATABASE_URL: ${SNAPSHOT_DATABASE_URL:?Set SNAPSHOT_DATABASE_URL in .env — run: python3 deploy/snapshot_dsn.py}
       # Браузерный фронт на другом хосте; без этого остаётся дефолт localhost:5173 → CORS в проде.
       CORS_ORIGINS: ${CORS_ORIGINS:-https://kamgu.24msg.ru}
     depends_on:
