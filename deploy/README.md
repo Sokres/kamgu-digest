@@ -199,6 +199,17 @@ npm ci && npm run build
        IdentitiesOnly yes
      ```
 
+     **Ключ хоста GitHub (`known_hosts`).** Если при `git pull` или `ssh -T` видите **`Host key verification failed`**, значит SSH к `github.com` ещё не доверяет серверу: в неинтерактивном деплое нельзя нажать «yes», поэтому заранее добавьте отпечатки (под тем же пользователем, что делает `git`, обычно `deploy`):
+
+     ```bash
+     mkdir -p ~/.ssh
+     chmod 700 ~/.ssh
+     ssh-keyscan -t ed25519,rsa,ecdsa github.com >> ~/.ssh/known_hosts
+     chmod 644 ~/.ssh/known_hosts
+     ```
+
+     Проверка: `ssh -T git@github.com` (ожидается приветствие про успешную аутентификацию или сообщение про shell access).
+
      ```bash
      cd /opt/kamgu
      git remote set-url origin git@github.com:OWNER/REPO.git

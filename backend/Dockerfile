@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY digest ./digest
 COPY app ./app
+COPY documents ./documents
 COPY sources ./sources
 COPY pipeline ./pipeline
 
