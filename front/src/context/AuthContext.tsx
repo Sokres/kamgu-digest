@@ -53,6 +53,7 @@ export function AuthProvider(props: { apiBase: string; children: React.ReactNode
   }, [])
 
   const value = useMemo<AuthContextValue>(() => {
+    void tokenVersion
     const t = getAccessToken().trim()
     const un = t ? jwtUsernameFromToken(t) : null
     return {
@@ -70,6 +71,7 @@ export function AuthProvider(props: { apiBase: string; children: React.ReactNode
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- hook must share context with AuthProvider
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext)
   if (!ctx) {
