@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 
+import { PageOnboarding } from '@/components/PageOnboarding'
+import { TrendSeriesChart } from '@/components/TrendSeriesChart'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { ApiError, fetchTrendProfiles, fetchTrendSeries, putTrendProfileLabel } from '@/lib/api'
+import { deltaSignedClass } from '@/lib/deltaClass'
 import { getMonthlyInternalKey } from '@/lib/settings'
 import type { TrendProfileSummary, TrendSeriesPoint } from '@/types/api'
 import { cn } from '@/lib/utils'
@@ -52,15 +55,20 @@ export function TrendsPage() {
     void loadProfiles()
   }, [loadProfiles])
 
+  const selectedProfile = profiles.find((p) => p.profile_id === selectedId)
+
   useEffect(() => {
     if (!selectedId) {
       setPoints([])
       return
     }
+    const prof = profiles.find((p) => p.profile_id === selectedId)
     let cancelled = false
     setLoadingSeries(true)
     setError(null)
-    fetchTrendSeries(apiBase, selectedId)
+    fetchTrendSeries(apiBase, selectedId, {
+      userId: prof?.user_id,
+    })
       .then((res) => {
         if (!cancelled) {
           setPoints(res.points)
@@ -79,9 +87,7 @@ export function TrendsPage() {
     return () => {
       cancelled = true
     }
-  }, [apiBase, selectedId])
-
-  const selectedProfile = profiles.find((p) => p.profile_id === selectedId)
+  }, [apiBase, selectedId, profiles])
 
   useEffect(() => {
     if (!selectedProfile) {
@@ -120,9 +126,29 @@ export function TrendsPage() {
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-8">
-      <div className="text-sm text-muted-foreground">
+      <PageOnboarding
+        title="Тренды по сохранённым снимкам"
+        steps={[
+          {
+            title: 'Накопление данных',
+            detail:
+              'Профили появляются после периодического дайджеста с тем же profile_id; чем больше запусков, тем полнее ряд.',
+          },
+          {
+            title: 'График и таблица',
+            detail:
+              'Столбцы — периоды; высота отражает число работ в топе. Подсказка при наведении или фокусе с клавиатуры.',
+          },
+          {
+            title: 'Подпись профиля',
+            detail: 'Ниже можно задать отображаемое имя и заметку (нужен X-Internal-Key, если включён на сервере).',
+          },
+        ]}
+      />
+
+      <div className="text-sm text-muted-foreground print:hidden">
         Данные из ежемесячных снимков в БД (<code className="rounded bg-muted px-1 py-0.5 text-xs">digest_snapshots</code>
-        ). Чем больше периодов вы накопите через «Ежемесячный», тем полнее график. Метрика: число работ в топе (
+        ). Чем больше периодов вы накопите через «Периодический» дайджест, тем полнее график. Метрика: число работ в топе (
         <code className="rounded bg-muted px-1 py-0.5 text-xs">works</code> в снимке).
       </div>
 
@@ -213,28 +239,8 @@ export function TrendsPage() {
               <p className="text-sm text-muted-foreground">Нет точек для этого профиля.</p>
             ) : (
               <>
-                <div className="flex h-48 items-end gap-1 sm:gap-2" aria-hidden>
-                  {points.map((p) => {
-                    const h = Math.max(4, (p.work_count / maxWork) * 100)
-                    return (
-                      <div
-                        key={p.period}
-                        className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1"
-                        title={`${p.period}: ${p.work_count}`}
-                      >
-                        <span className="text-[10px] font-medium tabular-nums text-foreground">{p.work_count}</span>
-                        <div className="flex w-full flex-1 items-end rounded-t-md bg-muted/80">
-                          <div
-                            className="w-full rounded-t-md bg-primary/85 transition-all"
-                            style={{ height: `${h}%` }}
-                          />
-                        </div>
-                        <span className="max-w-full truncate text-center text-[10px] text-muted-foreground">
-                          {p.period}
-                        </span>
-                      </div>
-                    )
-                  })}
+                <div className="print:hidden">
+                  <TrendSeriesChart points={points} maxWork={maxWork} />
                 </div>
 
                 <Table>
@@ -251,10 +257,20 @@ export function TrendsPage() {
                       <TableRow key={p.period}>
                         <TableCell className="font-mono text-sm">{p.period}</TableCell>
                         <TableCell className="text-right tabular-nums">{p.work_count}</TableCell>
-                        <TableCell className="hidden text-right tabular-nums sm:table-cell">
+                        <TableCell
+                          className={cn(
+                            'hidden text-right sm:table-cell',
+                            deltaSignedClass(p.delta_vs_prev ?? null),
+                          )}
+                        >
                           {p.delta_vs_prev == null ? '—' : p.delta_vs_prev > 0 ? `+${p.delta_vs_prev}` : String(p.delta_vs_prev)}
                         </TableCell>
-                        <TableCell className="hidden text-right tabular-nums md:table-cell">
+                        <TableCell
+                          className={cn(
+                            'hidden text-right md:table-cell',
+                            deltaSignedClass(p.pct_change_vs_prev ?? null),
+                          )}
+                        >
                           {p.pct_change_vs_prev == null ? '—' : `${p.pct_change_vs_prev > 0 ? '+' : ''}${p.pct_change_vs_prev}%`}
                         </TableCell>
                       </TableRow>

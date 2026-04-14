@@ -23,6 +23,8 @@ export interface DigestRequest {
   web_scholarly_sources_only?: boolean
   /** Доп. ключевые слова к запросу Tavily */
   web_search_additional_terms?: string[]
+  /** Id из POST /documents/pdf; учитываются в peer_reviewed */
+  attached_document_ids?: string[]
 }
 
 export interface PublicationInput {
@@ -51,9 +53,14 @@ export interface DigestMeta {
   digest_mode?: DigestMode
   candidates_openalex?: number
   candidates_semantic_scholar?: number
+  candidates_core?: number
+  /** Уникальных DOI, обогащённых через Crossref */
+  crossref_enriched_dois?: number
   web_snippets_used?: number
   /** Применён ли фильтр include_domains (научные сайты) */
   web_scholarly_domain_filter?: boolean
+  /** Загруженных PDF в кандидатах (peer_reviewed) */
+  user_pdf_documents?: number
   after_dedupe?: number
   used_for_llm?: number
   elapsed_seconds?: number
@@ -66,6 +73,12 @@ export interface DigestResponse {
   digest_ru: string
   digest_en: string
   meta?: DigestMeta
+}
+
+export interface PdfDocumentUploadResponse {
+  id: string
+  publication: PublicationInput
+  warnings?: string[]
 }
 
 export interface MonthlyDigestRequest {
@@ -126,6 +139,7 @@ export interface MonthlyDigestResponse {
 
 /** GET /trends/profiles */
 export interface TrendProfileSummary {
+  user_id?: string
   profile_id: string
   snapshot_count: number
   last_period: string
@@ -155,4 +169,68 @@ export interface TrendSeriesResponse {
 export interface TrendProfileLabelUpdate {
   display_name: string
   note?: string
+}
+
+/** GET/POST/PATCH/DELETE /digests/schedules */
+export interface PeriodicDigestScheduleOut {
+  id: string
+  user_id?: string
+  profile_id: string
+  cron_utc: string
+  enabled: boolean
+  topic_queries: string[]
+  max_candidates: number
+  top_n_for_llm: number
+  trend_top_k: number
+  from_year?: number | null
+  to_year?: number | null
+  exclude_dois: string[]
+  created_at: string
+  updated_at: string
+  last_run_at?: string | null
+  last_status?: string | null
+  last_error?: string | null
+}
+
+export interface DigestSchedulesListResponse {
+  items: PeriodicDigestScheduleOut[]
+  scheduler_enabled_in_config: boolean
+  scheduler_running: boolean
+}
+
+export interface PeriodicDigestScheduleCreate {
+  profile_id: string
+  cron_utc: string
+  enabled?: boolean
+  topic_queries: string[]
+  max_candidates?: number
+  top_n_for_llm?: number
+  trend_top_k?: number
+  from_year?: number | null
+  to_year?: number | null
+  exclude_dois?: string[]
+}
+
+export interface PeriodicDigestScheduleUpdate {
+  cron_utc?: string
+  enabled?: boolean
+  topic_queries?: string[]
+  max_candidates?: number
+  top_n_for_llm?: number
+  trend_top_k?: number
+  from_year?: number | null
+  to_year?: number | null
+  exclude_dois?: string[]
+}
+
+export interface AuthStatusResponse {
+  auth_enabled: boolean
+  registration_enabled: boolean
+}
+
+export interface AuthTokenResponse {
+  access_token: string
+  token_type: string
+  user_id: string
+  username: string
 }

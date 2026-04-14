@@ -34,6 +34,18 @@ class Settings(BaseSettings):
     semantic_scholar_max_retries: int = 12
     openalex_mailto: str | None = None
 
+    # CORE API v3: https://api.core.ac.uk/docs/v3 — ключ https://core.ac.uk/api-keys/register
+    core_api_key: str = ""
+    core_enabled: bool = False
+    # Квота batch /search: ~1 запрос / 10 с — пауза между страницами и перед первым запросом после других источников.
+    core_request_delay_seconds: float = 10.5
+    core_max_pages: int = 5
+
+    # Crossref REST: обогащение по DOI (GET https://api.crossref.org/works/...)
+    crossref_enrichment_enabled: bool = True
+    # Уникальных DOI за один дайджест (остальные без запроса к Crossref).
+    crossref_max_unique_dois: int = 80
+
     # Веб-обзор по сниппетам (режим digest_mode=web_snippets): https://tavily.com
     tavily_api_key: str | None = None
     web_search_max_results: int = 15
@@ -46,15 +58,32 @@ class Settings(BaseSettings):
 
     # Ежемесячные снимки: PostgreSQL (прод/крон) или SQLite без Docker — см. SNAPSHOT_DATABASE_URL в README
     snapshot_database_url: str = "postgresql://postgres:postgres@127.0.0.1:5432/kamgu_digest"
+    # Встроенный APScheduler: POST /digests/schedules. Включайте только при одном воркере uvicorn.
+    digest_periodic_scheduler_enabled: bool = False
     # Если задан — POST /digests/monthly и /digests/periodic требуют заголовок X-Internal-Key с тем же значением.
     monthly_digest_cron_secret: str = ""
 
     # Лимит POST /digests на один IP за скользящее окно 60 с (0 = отключено).
     digest_rate_limit_per_minute: int = 0
 
-    # Браузерный фронт (Vite и т.п.): список origin через запятую. Пусто — без CORS middleware.
+    # Загрузка PDF для дайджеста: каталог на диске (uuid.pdf + uuid.json)
+    documents_storage_dir: str = "data/documents"
+    pdf_max_upload_bytes: int = 20 * 1024 * 1024
+    pdf_max_pages_extract: int = 80
+    pdf_max_abstract_chars: int = 50_000
+
+    # Браузерный фронт (Vite и т.п.): список origin через запятую.
+    # Пустая строка в .env раньше отключала CORS и ломала fetch с localhost:5173 — в cors_origins_list подставляются dev-origins.
     # «*» — любой origin (без credentials).
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    # JWT-авторизация пользователей (снимки/тренды/расписания/PDF в разрезе user_id). AUTH_ENABLED=false — режим как раньше.
+    auth_enabled: bool = False
+    auth_jwt_secret: str = ""
+    auth_jwt_expire_minutes: int = 60 * 24 * 7
+    auth_registration_enabled: bool = True
+    # Старые строки без владельца мигрируют с этим user_id; новые записи при выключенной авторизации используют то же значение.
+    auth_legacy_user_id: str = "__legacy__"
 
     def llm_api_key_resolved(self) -> str:
         a = (self.openai_api_key or "").strip()
@@ -98,7 +127,7 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         raw = (self.cors_origins or "").strip()
         if not raw:
-            return []
+            raw = "http://localhost:5173,http://127.0.0.1:5173"
         if raw == "*":
             return ["*"]
         return [o.strip() for o in raw.split(",") if o.strip()]

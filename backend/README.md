@@ -1,6 +1,6 @@
 # ИИ-агент дайджестов по направлению исследования
 
-Облачный сервис на **FastAPI**: по запросу ищет открытые публикации в **OpenAlex** (опционально **Semantic Scholar**), устраняет дубликаты, ранжирует по релевантности к вашим запросам (RU/EN) и формирует **дайджест на русском и английском** через облачную LLM (OpenAI-совместимый API).
+Облачный сервис на **FastAPI**: по запросу ищет открытые публикации в **OpenAlex** (опционально **Semantic Scholar** и **CORE**), после сбора обогащает записи с DOI через **Crossref**, устраняет дубликаты, ранжирует по релевантности к вашим запросам (RU/EN) и формирует **дайджест на русском и английском** через облачную LLM (OpenAI-совместимый API).
 
 ## Требования
 
@@ -23,7 +23,7 @@ export PYTHONPATH="$(pwd)"
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
-- В `.env.example` **Semantic Scholar отключён** (`SEMANTIC_SCHOLAR_ENABLED=false`): кандидаты только из OpenAlex, без 429 от SS. Включите `true`, если нужен второй источник.
+- В `.env.example` **Semantic Scholar отключён** (`SEMANTIC_SCHOLAR_ENABLED=false`): кандидаты только из OpenAlex, без 429 от SS. Включите `true`, если нужен второй источник. **CORE** (`CORE_ENABLED`, `CORE_API_KEY` с [core.ac.uk](https://core.ac.uk/api-keys/register)) — третий источник по открытому доступу; между запросами к CORE соблюдается пауза (`CORE_REQUEST_DELAY_SECONDS`). **Crossref** включён по умолчанию (`CROSSREF_ENRICHMENT_ENABLED`) — до `CROSSREF_MAX_UNIQUE_DOIS` уникальных DOI за запрос.
 - Проверка: `curl -s http://localhost:8080/health` (liveness). Готовность БД снимков: `curl -s http://localhost:8080/health/ready`
 - Тесты: `PYTHONPATH=. pytest tests/`
 - Браузерный фронт (Vite на порту 5173): по умолчанию включён **CORS** для `http://localhost:5173` и `http://127.0.0.1:5173`. Задайте `CORS_ORIGINS` (через запятую) или оставьте пустым, чтобы отключить middleware. Готовый UI: каталог [`../front`](../front/README.md) (`npm run dev` в `front` после запуска API).
@@ -43,7 +43,7 @@ curl -s http://localhost:8080/digests \
 
 ### Режимы `POST /digests`
 
-- **`digest_mode`: `peer_reviewed` (по умолчанию)** — индексы OpenAlex (+ Semantic Scholar при `SEMANTIC_SCHOLAR_ENABLED`). Поля **`peer_reviewed_only`** (по умолчанию `true`) добавляют в OpenAlex фильтр `type:article`. Опционально **`openalex_concept_id`** (`C…` или URL) и **`openalex_source_ids`** (несколько журналов через запятую). Годы и концепт можно комбинировать с серверным **`filter`** (см. код `sources/openalex.py`).
+- **`digest_mode`: `peer_reviewed` (по умолчанию)** — индексы OpenAlex (+ Semantic Scholar при `SEMANTIC_SCHOLAR_ENABLED`, + CORE при `CORE_ENABLED` и ключе). Поля **`peer_reviewed_only`** (по умолчанию `true`) добавляют в OpenAlex фильтр `type:article`. Опционально **`openalex_concept_id`** (`C…` или URL) и **`openalex_source_ids`** (несколько журналов через запятую). Годы и концепт можно комбинировать с серверным **`filter`** (см. код `sources/openalex.py`).
 - **`digest_mode`: `web_snippets`** — короткие выдержки из **Tavily** + отдельный LLM-промпт и дисклеймер. В `.env`: **`TAVILY_API_KEY=tvly-...`**; лимит сниппетов: `min(top_n_for_llm, WEB_SEARCH_MAX_RESULTS, 20)`.
   - По умолчанию **`web_scholarly_sources_only: true`**: в Tavily передаётся **`include_domains`** — поиск только по списку научных доменов (PubMed, arXiv, Nature, Springer, …), см. `DEFAULT_SCHOLARLY_DOMAINS` в [`sources/tavily.py`](sources/tavily.py). Переопределение: **`TAVILY_INCLUDE_DOMAINS`** в `.env` (домены через запятую). Чтобы искать по всему интернету — в теле запроса **`web_scholarly_sources_only: false`**.
   - Дополнительные ключевые слова к строке поиска: **`web_search_additional_terms`**. Опционально **`TAVILY_QUERY_PREFIX`** в `.env` (например смещение к «peer-reviewed»).
@@ -54,11 +54,11 @@ curl -s http://localhost:8080/digests \
 
 ### Периодический дайджест с трендами (`POST /digests/periodic`, алиас `POST /digests/monthly`)
 
-Сохраняет **снимок** топ-статей по профилю в **PostgreSQL** (или **SQLite**, если задан `sqlite:///...` в `SNAPSHOT_DATABASE_URL`), сравнивает с предыдущим сохранённым периодом и возвращает `structured_delta` (прирост цитирований, вошли/вышли из топ-K, сдвиги долей OpenAlex-concepts) плюс текст от LLM с дисклеймером. Имя пути **`/digests/monthly`** оставлено для совместимости; канонический путь — **`/digests/periodic`** (частота запусков задаётся только внешним планировщиком: месяц, квартал и т.д.).
+Сохраняет **снимок** топ-статей по профилю в **PostgreSQL** (или **SQLite**, если задан `sqlite:///...` в `SNAPSHOT_DATABASE_URL`), сравнивает с предыдущим сохранённым периодом и возвращает `structured_delta` (прирост цитирований, вошли/вышли из топ-K, сдвиги долей OpenAlex-concepts) плюс текст от LLM с дисклеймером. Имя пути **`/digests/monthly`** оставлено для совместимости; канонический путь — **`/digests/periodic`**. Частоту можно задать **внешним** cron или **встроенным** планировщиком: `DIGEST_PERIODIC_SCHEDULER_ENABLED=true` и CRUD **`/digests/schedules`** (один процесс uvicorn, см. `.env.example`).
 
 - Первый запуск по `profile_id` даёт «базовую линию» без сравнения.
 - **Популярность** здесь = изменение `cited_by_count` и ранга внутри вашей выборки, не абсолютный мировой рейтинг.
-- Если задан `MONTHLY_DIGEST_CRON_SECRET`, к запросу нужен заголовок `X-Internal-Key` с тем же значением.
+- Если задан `MONTHLY_DIGEST_CRON_SECRET`, к запросу и к **`/digests/schedules`** нужен заголовок `X-Internal-Key` с тем же значением.
 
 Пример:
 
@@ -76,7 +76,7 @@ curl -s http://localhost:8080/digests/periodic \
   }'
 ```
 
-**Расписание (раз в месяц):** внешний планировщик (например [Cloud Scheduler](https://cloud.google.com/scheduler) → HTTP `POST` на ваш сервис, или `cron` на Fly.io), то же тело запроса и заголовок секрета. В проде задайте `SNAPSHOT_DATABASE_URL` на управляемый PostgreSQL (или при необходимости `sqlite:////data/snapshots.db` на постоянном томе).
+**Расписание:** либо внешний планировщик (например [Cloud Scheduler](https://cloud.google.com/scheduler) → HTTP `POST` на ваш сервис, или `cron` на Fly.io) с тем же телом запроса и заголовком секрета, либо записи в **`/digests/schedules`** при включённом **`DIGEST_PERIODIC_SCHEDULER_ENABLED`**. В проде задайте `SNAPSHOT_DATABASE_URL` на управляемый PostgreSQL (или при необходимости `sqlite:////data/snapshots.db` на постоянном томе).
 
 ### Дашборд трендов (`GET /trends/...`)
 

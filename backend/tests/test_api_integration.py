@@ -18,10 +18,13 @@ from digest.models import (
 
 
 @pytest.fixture
-def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    monkeypatch.setattr(settings, "snapshot_database_url", "sqlite:///:memory:", raising=False)
+def client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> TestClient:
+    # Файл на диске: :memory: даёт отдельную БД на каждое соединение, HTTP-тесты теряют данные между запросами.
+    db = tmp_path / "api_test.db"
+    monkeypatch.setattr(settings, "snapshot_database_url", f"sqlite:///{db}", raising=False)
     monkeypatch.setattr(settings, "digest_rate_limit_per_minute", 0, raising=False)
     monkeypatch.setattr(settings, "monthly_digest_cron_secret", "", raising=False)
+    monkeypatch.setattr(settings, "auth_enabled", False, raising=False)
     from app.main import app
 
     return TestClient(app)
@@ -104,13 +107,47 @@ def test_post_digests_periodic_alias_mocked(client: TestClient) -> None:
     assert r_periodic.json()["structured_delta"]["profile_id"] == "p"
 
 
-def test_rate_limit_429(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_digest_schedules_empty(client: TestClient) -> None:
+    r = client.get("/digests/schedules")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["items"] == []
+    assert data["scheduler_enabled_in_config"] is False
+    assert data["scheduler_running"] is False
+
+
+def test_post_digest_schedule_roundtrip(client: TestClient) -> None:
+    body = {
+        "profile_id": "p1",
+        "cron_utc": "0 6 1 * *",
+        "enabled": True,
+        "topic_queries": ["solar"],
+        "max_candidates": 50,
+        "top_n_for_llm": 10,
+        "trend_top_k": 10,
+    }
+    r = client.post("/digests/schedules", json=body)
+    assert r.status_code == 200
+    sid = r.json()["id"]
+    assert r.json()["cron_utc"] == "0 6 1 * *"
+    r2 = client.get("/digests/schedules")
+    assert r2.status_code == 200
+    assert len(r2.json()["items"]) == 1
+    r3 = client.delete(f"/digests/schedules/{sid}")
+    assert r3.status_code == 200
+    r4 = client.get("/digests/schedules")
+    assert r4.json()["items"] == []
+
+
+def test_rate_limit_429(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     from app.api import deps
 
     deps._digest_rate_buckets.clear()
-    monkeypatch.setattr(settings, "snapshot_database_url", "sqlite:///:memory:", raising=False)
+    db = tmp_path / "rl.db"
+    monkeypatch.setattr(settings, "snapshot_database_url", f"sqlite:///{db}", raising=False)
     monkeypatch.setattr(settings, "digest_rate_limit_per_minute", 2, raising=False)
     monkeypatch.setattr(settings, "monthly_digest_cron_secret", "", raising=False)
+    monkeypatch.setattr(settings, "auth_enabled", False, raising=False)
     from app.main import app
 
     tc = TestClient(app)

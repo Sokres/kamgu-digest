@@ -98,3 +98,65 @@ async def get_json(
             await asyncio.sleep(_backoff_seconds(attempt))
     logger.error("get_json exhausted retries (%s): %s", max_attempts, last_msg)
     return None
+
+
+async def post_json(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    json_body: dict[str, Any],
+    headers: dict[str, str] | None = None,
+    max_attempts: int = 5,
+) -> dict[str, Any] | None:
+    """POST JSON с ретраями при 429/502/503/504 (как get_json)."""
+    headers = dict(headers or {})
+    if "content-type" not in {k.lower() for k in headers}:
+        headers["Content-Type"] = "application/json"
+    last_msg = ""
+    for attempt in range(max_attempts):
+        try:
+            r = await client.post(url, json=json_body, headers=headers)
+            if r.status_code == 429:
+                last_msg = f"HTTP {r.status_code}"
+                logger.warning("%s — %s, retry %s/%s", url[:72], last_msg, attempt + 1, max_attempts)
+                await _sleep_after_rate_limit(r, attempt, url=url)
+                continue
+            if r.status_code in (502, 503, 504):
+                last_msg = f"HTTP {r.status_code}"
+                logger.warning("%s — %s, retry %s/%s", url[:72], last_msg, attempt + 1, max_attempts)
+                await asyncio.sleep(_backoff_seconds(attempt))
+                continue
+            r.raise_for_status()
+            try:
+                data = r.json()
+            except ValueError:
+                logger.warning("Invalid JSON from POST %s, retry", url[:72])
+                await asyncio.sleep(_backoff_seconds(attempt))
+                continue
+            if not isinstance(data, dict):
+                return None
+            return data
+        except httpx.HTTPStatusError as e:
+            code = e.response.status_code
+            if code == 429:
+                last_msg = str(e)
+                await _sleep_after_rate_limit(e.response, attempt, url=url)
+                continue
+            if code in (502, 503, 504):
+                last_msg = str(e)
+                await asyncio.sleep(_backoff_seconds(attempt))
+                continue
+            logger.warning("HTTP %s for POST %s: %s", code, url[:72], e)
+            return None
+        except (httpx.RequestError, ssl.SSLError, OSError, RuntimeError) as e:
+            last_msg = str(e)
+            logger.warning(
+                "Transport error POST %s (attempt %s/%s): %s",
+                url[:72],
+                attempt + 1,
+                max_attempts,
+                e,
+            )
+            await asyncio.sleep(_backoff_seconds(attempt))
+    logger.error("post_json exhausted retries (%s): %s", max_attempts, last_msg)
+    return None

@@ -11,14 +11,14 @@ from pipeline.run_monthly import run_monthly_digest
 logger = logging.getLogger(__name__)
 
 
-async def execute_digest(body: DigestRequest) -> DigestResponse:
+async def execute_digest(body: DigestRequest, document_user_id: str | None = None) -> DigestResponse:
     if not settings.llm_api_key_resolved():
         raise HTTPException(
             status_code=503,
             detail="Укажите OPENAI_API_KEY или OPENROUTER_API_KEY в .env",
         )
     try:
-        return await run_digest(body)
+        return await run_digest(body, document_user_id=document_user_id)
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except RateLimitError as e:
@@ -49,14 +49,14 @@ async def execute_digest(body: DigestRequest) -> DigestResponse:
         ) from None
 
 
-async def execute_monthly_digest(body: MonthlyDigestRequest) -> MonthlyDigestResponse:
+async def execute_monthly_digest(body: MonthlyDigestRequest, user_id: str) -> MonthlyDigestResponse:
     if not settings.llm_api_key_resolved():
         raise HTTPException(
             status_code=503,
             detail="Укажите OPENAI_API_KEY или OPENROUTER_API_KEY в .env",
         )
     try:
-        return await run_monthly_digest(body)
+        return await run_monthly_digest(body, user_id=user_id)
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except RateLimitError as e:

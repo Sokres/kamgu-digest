@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from datetime import datetime, timezone
@@ -28,12 +27,7 @@ from pipeline.dedupe import dedupe_publications, publication_dedupe_key
 from pipeline.llm import generate_monthly_digest_llm
 from pipeline.monthly_diff import compute_monthly_structured_delta
 from pipeline.score import rank_for_llm
-from pipeline.run import (
-    _english_search_fallback,
-    _search_query,
-)
-from sources.openalex import fetch_openalex
-from sources.semantic_scholar import fetch_semantic_scholar
+from pipeline.ingest_sources import ingest_peer_reviewed_sources
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +74,7 @@ def _works_from_payload(payload: dict) -> list[SnapshotWorkRecord]:
     return out
 
 
-async def run_monthly_digest(req: MonthlyDigestRequest) -> MonthlyDigestResponse:
+async def run_monthly_digest(req: MonthlyDigestRequest, user_id: str) -> MonthlyDigestResponse:
     t0 = time.perf_counter()
     period = _utc_period(req.force_period)
     digest_req = DigestRequest(
@@ -96,76 +90,47 @@ async def run_monthly_digest(req: MonthlyDigestRequest) -> MonthlyDigestResponse
     compared_period: str | None = None
     with snapshot_connection(settings.snapshot_database_url) as conn:
         init_snapshot_schema(conn)
-        prev_row = fetch_latest_snapshot_before(conn, req.profile_id, period)
+        prev_row = fetch_latest_snapshot_before(conn, user_id, req.profile_id, period)
         if prev_row:
             compared_period, payload = prev_row
             prev_works = _works_from_payload(payload)
 
     meta_warnings: list[str] = []
-    search = _search_query(digest_req.topic_queries)
-    if settings.semantic_scholar_enabled:
-        half = max(1, digest_req.max_candidates // 2)
-        oa_limit = half
-        ss_limit = max(1, digest_req.max_candidates - half)
-    else:
-        oa_limit = digest_req.max_candidates
-        ss_limit = 0
 
     timeout = httpx.Timeout(settings.http_timeout_seconds)
-    oa_kw = dict(
-        peer_reviewed_only=digest_req.peer_reviewed_only,
-        openalex_concept_id=digest_req.openalex_concept_id,
-        openalex_source_ids=digest_req.openalex_source_ids,
-    )
     async with httpx.AsyncClient(
         timeout=timeout,
         headers=settings.http_client_headers(),
     ) as client:
-        oa, w_oa = await fetch_openalex(
+        ing = await ingest_peer_reviewed_sources(
             client,
-            search,
-            oa_limit,
-            digest_req.from_year,
-            digest_req.to_year,
-            **oa_kw,
+            topic_queries=digest_req.topic_queries,
+            max_candidates=digest_req.max_candidates,
+            from_year=digest_req.from_year,
+            to_year=digest_req.to_year,
+            peer_reviewed_only=digest_req.peer_reviewed_only,
+            openalex_concept_id=digest_req.openalex_concept_id,
+            openalex_source_ids=digest_req.openalex_source_ids,
         )
-        meta_warnings.extend(w_oa)
-        ss_query = search
-        if len(oa) == 0:
-            alt = _english_search_fallback(digest_req.topic_queries)
-            if alt and alt.casefold() != search.casefold():
-                logger.info("OpenAlex пусто — второй запрос (англ. фраза): %s", alt[:120])
-                oa, w_oa2 = await fetch_openalex(
-                    client,
-                    alt,
-                    oa_limit,
-                    digest_req.from_year,
-                    digest_req.to_year,
-                    **oa_kw,
-                )
-                meta_warnings.extend(w_oa2)
-                ss_query = alt
-        if settings.semantic_scholar_enabled and ss_limit > 0:
-            if settings.source_stagger_seconds > 0:
-                await asyncio.sleep(settings.source_stagger_seconds)
-            ss, w_ss = await fetch_semantic_scholar(
-                client, ss_query, ss_limit, digest_req.from_year, digest_req.to_year
-            )
-            meta_warnings.extend(w_ss)
-        else:
-            ss = []
+        meta_warnings.extend(ing.warnings)
+        oa_count = ing.n_openalex
+        ss_count = ing.n_semantic_scholar
+        core_count = ing.n_core
+        cr_dois = ing.crossref_enriched_dois
 
-    raw: list[PublicationInput] = list(oa) + list(ss)
+    raw: list[PublicationInput] = list(ing.publications)
     exclude = set(digest_req.exclude_dois)
     deduped = dedupe_publications(raw, exclude)
     ranked = rank_for_llm(deduped, digest_req.topic_queries, digest_req.top_n_for_llm)
 
     logger.info(
-        "Monthly ingest profile=%s period=%s: openalex=%s ss=%s deduped=%s ranked=%s",
+        "Monthly ingest profile=%s period=%s: openalex=%s ss=%s core=%s crossref_dois=%s deduped=%s ranked=%s",
         req.profile_id,
         period,
-        len(oa),
-        len(ss),
+        oa_count,
+        ss_count,
+        core_count,
+        cr_dois,
         len(deduped),
         len(ranked),
     )
@@ -210,7 +175,7 @@ async def run_monthly_digest(req: MonthlyDigestRequest) -> MonthlyDigestResponse
     try:
         with snapshot_connection(settings.snapshot_database_url) as conn:
             init_snapshot_schema(conn)
-            upsert_snapshot(conn, req.profile_id, period, payload)
+            upsert_snapshot(conn, user_id, req.profile_id, period, payload)
         snapshot_saved = True
     except Exception as e:
         logger.exception("Snapshot save failed: %s", e)
@@ -219,8 +184,10 @@ async def run_monthly_digest(req: MonthlyDigestRequest) -> MonthlyDigestResponse
     elapsed = time.perf_counter() - t0
     meta = MonthlyDigestMeta(
         digest_mode="peer_reviewed",
-        candidates_openalex=len(oa),
-        candidates_semantic_scholar=len(ss),
+        candidates_openalex=oa_count,
+        candidates_semantic_scholar=ss_count,
+        candidates_core=core_count,
+        crossref_enriched_dois=cr_dois,
         after_dedupe=len(deduped),
         used_for_llm=len(ranked),
         elapsed_seconds=round(elapsed, 3),

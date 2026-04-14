@@ -10,7 +10,7 @@ import httpx
 from digest.config import settings
 from digest.models import DigestMeta, DigestRequest, DigestResponse, PublicationInput
 from pipeline.llm import generate_web_digest_llm
-from pipeline.run import _search_query
+from pipeline.ingest_sources import search_query as _search_query
 from sources.tavily import (
     build_tavily_query,
     fetch_tavily_snippets,
@@ -41,6 +41,8 @@ async def run_web_digest(req: DigestRequest) -> DigestResponse:
         include_domains = resolve_scholarly_include_domains()
 
     meta_warnings: list[str] = []
+    if req.attached_document_ids:
+        meta_warnings.append("attached_document_ids_ignored_web_mode")
     if req.web_scholarly_sources_only and include_domains:
         meta_warnings.append("tavily_include_domains_scholarly")
     max_snip = min(req.top_n_for_llm, settings.web_search_max_results, 20)

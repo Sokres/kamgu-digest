@@ -1,5 +1,8 @@
+import { useState } from 'react'
+
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
@@ -13,6 +16,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  copyTextToClipboard,
+  digestBodyToMarkdown,
+  downloadBlob,
+  fullReportMarkdown,
+  publicationsToMarkdown,
+} from '@/lib/digestExport'
 import type {
   ArticleCard,
   DigestMeta,
@@ -40,6 +50,15 @@ function MetaBlock({ meta }: { meta?: DigestMeta }) {
     items.push(
       { label: 'OpenAlex', value: meta.candidates_openalex ?? '—' },
       { label: 'Semantic Scholar', value: meta.candidates_semantic_scholar ?? '—' },
+      { label: 'CORE', value: meta.candidates_core ?? '—' },
+      {
+        label: 'Crossref (DOI)',
+        value: meta.crossref_enriched_dois ?? '—',
+      },
+      {
+        label: 'PDF (загрузки)',
+        value: meta.user_pdf_documents ?? '—',
+      },
       { label: 'После дедупа', value: meta.after_dedupe ?? '—' },
     )
   }
@@ -66,6 +85,101 @@ function MetaBlock({ meta }: { meta?: DigestMeta }) {
   )
 }
 
+function DataSourcesNote({ meta }: { meta?: DigestMeta }) {
+  const mode = meta?.digest_mode ?? 'peer_reviewed'
+  const items =
+    mode === 'web_snippets'
+      ? ['Tavily (веб-поиск и сниппеты)', 'LLM для текста дайджеста']
+      : [
+          'OpenAlex',
+          'Semantic Scholar (при включении на сервере)',
+          'CORE (при CORE_ENABLED и ключе)',
+          'Crossref — обогащение метаданных по DOI',
+          'LLM для текста дайджеста',
+        ]
+  return (
+    <div className="rounded-lg border border-border/80 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+      <span className="font-medium text-foreground">Источники данных: </span>
+      {items.join(' · ')}
+    </div>
+  )
+}
+
+function DigestDisclaimer() {
+  return (
+    <Alert className="border-amber-200/80 bg-amber-50/80 dark:border-amber-900/50 dark:bg-amber-950/30">
+      <AlertTitle className="text-amber-950 dark:text-amber-100">Ограничения и справочный характер</AlertTitle>
+      <AlertDescription className="text-pretty text-amber-950/90 dark:text-amber-50/90">
+        Полнота выборки зависит от открытых API (OpenAlex, Semantic Scholar и др.) и их лимитов; сервис не
+        гарантирует исчерпывающий охват всех журналов. Текст дайджеста сформирован языковой моделью и носит
+        справочный характер: проверяйте формулировки по первоисточникам перед цитированием в отчётности.
+      </AlertDescription>
+    </Alert>
+  )
+}
+
+function DigestExportBar({ data }: { data: DigestResponse | MonthlyDigestResponse }) {
+  const [msg, setMsg] = useState<string | null>(null)
+  const isMonthly = 'structured_delta' in data && data.structured_delta != null
+
+  async function flash(ok: string) {
+    setMsg(ok)
+    window.setTimeout(() => setMsg(null), 2500)
+  }
+
+  async function handleCopyFullMd() {
+    const md = fullReportMarkdown(data, isMonthly ? 'Периодический дайджест' : 'Дайджест литературы')
+    await copyTextToClipboard(md)
+    void flash('Полный отчёт скопирован')
+  }
+
+  async function handleCopyBodyMd() {
+    await copyTextToClipboard(digestBodyToMarkdown(data))
+    void flash('Текст RU/EN и список публикаций скопированы')
+  }
+
+  async function handleCopyPubs() {
+    await copyTextToClipboard(publicationsToMarkdown(data.publications_used))
+    void flash('Список публикаций скопирован')
+  }
+
+  function downloadFullMd() {
+    const md = fullReportMarkdown(data, isMonthly ? 'Периодический дайджест' : 'Дайджест литературы')
+    downloadBlob('digest-report.md', md, 'text/markdown;charset=utf-8')
+    void flash('Файл .md сохранён')
+  }
+
+  function downloadTxt() {
+    const md = digestBodyToMarkdown(data)
+    downloadBlob('digest-body.txt', md, 'text/plain;charset=utf-8')
+    void flash('Файл .txt сохранён')
+  }
+
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between print:hidden">
+      <p className="text-xs font-medium text-muted-foreground">Экспорт для отчётов</p>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="secondary" size="sm" onClick={() => void handleCopyFullMd()}>
+          Копировать полный Markdown
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => void handleCopyBodyMd()}>
+          Копировать текст + публикации
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => void handleCopyPubs()}>
+          Копировать список публикаций
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={downloadFullMd}>
+          Скачать .md
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={downloadTxt}>
+          Скачать .txt
+        </Button>
+      </div>
+      {msg ? <span className="text-xs text-muted-foreground sm:ml-auto">{msg}</span> : null}
+    </div>
+  )
+}
+
 function ArticleCardsList({ cards }: { cards: ArticleCard[] }) {
   if (!cards.length) return <p className="text-sm text-muted-foreground">Нет карточек.</p>
   return (
@@ -73,7 +187,7 @@ function ArticleCardsList({ cards }: { cards: ArticleCard[] }) {
       {cards.map((c, i) => (
         <Card key={`${c.title}-${i}`}>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base leading-snug">
+            <CardTitle className="font-heading text-base font-semibold leading-snug tracking-tight">
               {c.url ? (
                 <a
                   href={c.url}
@@ -171,8 +285,10 @@ function PublicationsTable({ rows }: { rows: PublicationInput[] }) {
 
 function DigestText({ text }: { text: string }) {
   return (
-    <ScrollArea className="h-[min(480px,55vh)] w-full rounded-md border p-4">
-      <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{text || '—'}</pre>
+    <ScrollArea className="h-[min(480px,55vh)] w-full rounded-md border">
+      <div className="digest-prose mx-auto max-w-prose p-4 md:p-6">
+        <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{text || '—'}</pre>
+      </div>
     </ScrollArea>
   )
 }
@@ -220,6 +336,9 @@ export function DigestResultView(props: {
 
   return (
     <div className="space-y-6">
+      <DigestDisclaimer />
+      <DataSourcesNote meta={data.meta} />
+
       {mode === 'web_snippets' ? (
         <Alert>
           <AlertTitle>Веб-обзор по сниппетам</AlertTitle>
@@ -242,15 +361,17 @@ export function DigestResultView(props: {
         </Alert>
       ) : null}
 
+      <DigestExportBar data={data} />
+
       <div>
-        <h3 className="text-lg font-medium mb-2">Мета</h3>
+        <h3 className="text-lg font-heading font-semibold mb-2">Мета</h3>
         <MetaBlock meta={data.meta} />
       </div>
 
       <Separator />
 
       <Tabs defaultValue="ru">
-        <TabsList>
+        <TabsList className="print:hidden">
           <TabsTrigger value="ru">Дайджест RU</TabsTrigger>
           <TabsTrigger value="en">Дайджест EN</TabsTrigger>
         </TabsList>
@@ -263,12 +384,12 @@ export function DigestResultView(props: {
       </Tabs>
 
       <div>
-        <h3 className="text-lg font-medium mb-3">Карточки</h3>
+        <h3 className="text-lg font-heading font-semibold mb-3">Карточки</h3>
         <ArticleCardsList cards={data.article_cards} />
       </div>
 
       <div>
-        <h3 className="text-lg font-medium mb-3">
+        <h3 className="text-lg font-heading font-semibold mb-3">
           {mode === 'web_snippets' ? 'Источники (сниппеты)' : 'Использованные публикации'}
         </h3>
         <PublicationsTable rows={data.publications_used} />

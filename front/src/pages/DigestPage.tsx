@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 
+import { DigestPresetsBar } from '@/components/DigestPresetsBar'
 import { DigestResultView } from '@/components/DigestResultView'
+import { PageOnboarding } from '@/components/PageOnboarding'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,7 +19,8 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { ApiError, createDigest } from '@/lib/api'
+import { ApiError, createDigest, uploadPdfDocument } from '@/lib/api'
+import type { DigestFormPreset } from '@/lib/digestPresets'
 import type { DigestMode, DigestRequest, DigestResponse } from '@/types/api'
 
 function parseYear(raw: string): number | null {
@@ -42,6 +45,12 @@ function parseSourceIds(text: string): string[] {
     .filter(Boolean)
 }
 
+const TOPIC_TEMPLATES: { label: string; topics: string[] }[] = [
+  { label: 'Квантовые вычисления', topics: ['quantum computing', 'квантовые вычисления'] },
+  { label: 'ВИЭ и энергетика', topics: ['renewable energy', 'энергетика ВИЭ'] },
+  { label: 'LLM и NLP', topics: ['large language models', 'обработка естественного языка'] },
+]
+
 export function DigestPage() {
   const { apiBase } = useOutletContext<{ apiBase: string }>()
   const [topics, setTopics] = useState<string[]>(['quantum computing', 'квантовые вычисления'])
@@ -57,6 +66,10 @@ export function DigestPage() {
   const [webScholarlyOnly, setWebScholarlyOnly] = useState(true)
   const [webExtraTerms, setWebExtraTerms] = useState('')
 
+  const [pdfAttachments, setPdfAttachments] = useState<{ id: string; name: string }[]>([])
+  const [pdfUploading, setPdfUploading] = useState(false)
+  const pdfInputRef = useRef<HTMLInputElement>(null)
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<DigestResponse | null>(null)
@@ -71,6 +84,40 @@ export function DigestPage() {
 
   function removeTopic(i: number) {
     setTopics((t) => t.filter((_, j) => j !== i))
+  }
+
+  useEffect(() => {
+    if (digestMode !== 'peer_reviewed') {
+      setPdfAttachments([])
+    }
+  }, [digestMode])
+
+  async function handlePdfFiles(files: FileList | null) {
+    if (!files?.length) return
+    setPdfUploading(true)
+    setError(null)
+    try {
+      const added: { id: string; name: string }[] = []
+      for (const f of Array.from(files)) {
+        if (!f.name.toLowerCase().endsWith('.pdf')) {
+          setError('Можно загружать только файлы .pdf')
+          continue
+        }
+        const res = await uploadPdfDocument(apiBase, f)
+        added.push({ id: res.id, name: f.name })
+      }
+      if (added.length) {
+        setPdfAttachments((prev) => [...prev, ...added])
+      }
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError(err instanceof Error ? err.message : String(err))
+      }
+    } finally {
+      setPdfUploading(false)
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -108,6 +155,9 @@ export function DigestPage() {
       if (cid) body.openalex_concept_id = cid
       const sids = parseSourceIds(openalexSourceIds)
       if (sids.length) body.openalex_source_ids = sids
+      if (pdfAttachments.length) {
+        body.attached_document_ids = pdfAttachments.map((p) => p.id)
+      }
     }
 
     if (digestMode === 'web_snippets') {
@@ -133,8 +183,74 @@ export function DigestPage() {
     }
   }
 
+  const presetSnapshot = useMemo(
+    (): Omit<DigestFormPreset, 'id' | 'name' | 'updatedAt'> => ({
+      digestMode,
+      peerReviewedOnly,
+      openalexConceptId,
+      openalexSourceIds,
+      maxCandidates,
+      topN,
+      fromYear,
+      toYear,
+      excludeDois,
+      webScholarlyOnly,
+      webExtraTerms,
+      topics: [...topics],
+    }),
+    [
+      digestMode,
+      peerReviewedOnly,
+      openalexConceptId,
+      openalexSourceIds,
+      maxCandidates,
+      topN,
+      fromYear,
+      toYear,
+      excludeDois,
+      webScholarlyOnly,
+      webExtraTerms,
+      topics,
+    ],
+  )
+
+  function applyPreset(p: DigestFormPreset) {
+    setDigestMode(p.digestMode)
+    setPeerReviewedOnly(p.peerReviewedOnly)
+    setOpenalexConceptId(p.openalexConceptId)
+    setOpenalexSourceIds(p.openalexSourceIds)
+    setMaxCandidates(p.maxCandidates)
+    setTopN(p.topN)
+    setFromYear(p.fromYear)
+    setToYear(p.toYear)
+    setExcludeDois(p.excludeDois)
+    setWebScholarlyOnly(p.webScholarlyOnly)
+    setWebExtraTerms(p.webExtraTerms)
+    setTopics(p.topics.length ? [...p.topics] : [''])
+  }
+
   return (
     <div className="mx-auto max-w-4xl space-y-10 pb-8">
+      <PageOnboarding
+        title="Как получить разовый дайджест"
+        steps={[
+          {
+            title: 'Темы и режим',
+            detail:
+              'Задайте одну или несколько поисковых строк (удобно дублировать на EN/RU). Выберите рецензируемый корпус или веб-обзор по сниппетам.',
+          },
+          {
+            title: 'Пресеты и примеры',
+            detail: 'Сохраните частые наборы параметров в пресетах или подставьте готовый пример тем одной кнопкой.',
+          },
+          {
+            title: 'Запуск и результат',
+            detail:
+              'После «Сформировать дайджест» подождите 5–15 минут; затем появится текст RU/EN, карточки и экспорт в Markdown.',
+          },
+        ]}
+      />
+
       <Card className="border-border/70 shadow-sm">
         <CardHeader className="space-y-1">
           <CardTitle className="text-xl">Параметры дайджеста</CardTitle>
@@ -146,6 +262,24 @@ export function DigestPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
+            <DigestPresetsBar onApply={applyPreset} snapshot={presetSnapshot} />
+
+            <div className="flex flex-wrap gap-2">
+              <span className="w-full text-xs font-medium text-muted-foreground">Примеры тем (подставить в строки)</span>
+              {TOPIC_TEMPLATES.map((t) => (
+                <Button
+                  key={t.label}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  onClick={() => setTopics([...t.topics])}
+                >
+                  {t.label}
+                </Button>
+              ))}
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="digest-mode">Режим</Label>
               <Select
@@ -205,6 +339,9 @@ export function DigestPage() {
 
             <div className="space-y-2">
               <Label>Поисковые строки (RU/EN)</Label>
+              <p className="text-xs text-muted-foreground">
+                Короткие фразы по сути темы; дублирование на двух языках улучшает отбор в OpenAlex.
+              </p>
               {topics.map((t, i) => (
                 <div key={i} className="flex gap-2">
                   <Input
@@ -245,6 +382,69 @@ export function DigestPage() {
                     <p className="text-xs text-muted-foreground">OpenAlex: type:article</p>
                   </div>
                 </div>
+                <div className="space-y-3 rounded-lg border border-border/80 bg-muted/15 p-4">
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium">Свои PDF (необязательно)</Label>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Файлы отправляются на сервер, из них извлекается текст и они участвуют в общем отборе вместе с
+                      OpenAlex и др. Для веб-режима (Tavily) загрузки не используются.
+                    </p>
+                  </div>
+                  <input
+                    ref={pdfInputRef}
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    multiple
+                    className="hidden"
+                    onChange={(ev) => {
+                      void handlePdfFiles(ev.target.files)
+                      ev.target.value = ''
+                    }}
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={loading || pdfUploading}
+                      onClick={() => pdfInputRef.current?.click()}
+                    >
+                      {pdfUploading ? 'Загрузка…' : 'Добавить PDF'}
+                    </Button>
+                    {pdfAttachments.length ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => setPdfAttachments([])}
+                      >
+                        Очистить список
+                      </Button>
+                    ) : null}
+                  </div>
+                  {pdfAttachments.length ? (
+                    <ul className="space-y-1 text-xs text-muted-foreground">
+                      {pdfAttachments.map((p) => (
+                        <li key={p.id} className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate font-mono text-[11px]" title={p.id}>
+                            {p.name}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 shrink-0 px-2 text-xs"
+                            onClick={() => setPdfAttachments((prev) => prev.filter((x) => x.id !== p.id))}
+                          >
+                            Убрать
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="concept-id">OpenAlex concept id (необязательно)</Label>
@@ -349,6 +549,12 @@ export function DigestPage() {
           <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Результат</h2>
           <p className="mt-1 text-xs text-muted-foreground/90">Текст дайджеста и карточки источников</p>
         </div>
+        {!loading && !data && !error ? (
+          <p className="rounded-lg border border-dashed border-border/80 bg-muted/15 px-4 py-3 text-sm text-muted-foreground print:hidden">
+            Здесь появится дайджест на русском и английском, карточки статей и таблица публикаций. Время
+            генерации зависит от объёма; типичный ориентир — несколько минут.
+          </p>
+        ) : null}
         <DigestResultView
           loading={loading}
           loadingHint={

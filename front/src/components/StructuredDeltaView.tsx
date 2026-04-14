@@ -8,6 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { deltaSignedClass } from '@/lib/deltaClass'
 import type { MonthlyStructuredDelta } from '@/types/api'
 
 function CitationRows({
@@ -37,7 +38,9 @@ function CitationRows({
             {rows.map((r) => (
               <TableRow key={r.dedupe_key}>
                 <TableCell className="max-w-md">{r.title}</TableCell>
-                <TableCell>{r.citation_delta ?? '—'}</TableCell>
+                <TableCell className={deltaSignedClass(r.citation_delta ?? null)}>
+                  {r.citation_delta == null ? '—' : r.citation_delta > 0 ? `+${r.citation_delta}` : String(r.citation_delta)}
+                </TableCell>
                 <TableCell>{r.rank_previous ?? '—'}</TableCell>
                 <TableCell>{r.rank_current ?? '—'}</TableCell>
               </TableRow>
@@ -80,7 +83,9 @@ function ConceptTable({
                 <TableCell>
                   {r.share_current != null ? r.share_current.toFixed(3) : '—'}
                 </TableCell>
-                <TableCell>{r.delta != null ? r.delta.toFixed(3) : '—'}</TableCell>
+                <TableCell className={deltaSignedClass(r.delta ?? null)}>
+                  {r.delta != null ? (r.delta > 0 ? `+${r.delta.toFixed(3)}` : r.delta.toFixed(3)) : '—'}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

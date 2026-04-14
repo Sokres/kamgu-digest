@@ -17,7 +17,13 @@ async def _lifespan(_app: FastAPI):
         logger.warning(
             "Рекомендуется OPENALEX_MAILTO или HTTP_USER_AGENT в .env (вежливый пул OpenAlex и меньше 403 у источников)."
         )
-    yield
+    from digest.periodic_scheduler import shutdown_periodic_scheduler, start_periodic_scheduler
+
+    start_periodic_scheduler()
+    try:
+        yield
+    finally:
+        shutdown_periodic_scheduler()
 
 
 def _configure_logging() -> None:
@@ -42,9 +48,12 @@ def create_app() -> FastAPI:
         lifespan=_lifespan,
         description=(
             "Рецензируемый корпус: OpenAlex (фильтры type/article, годы, concept, source), "
-            "опционально Semantic Scholar; отдельно веб-обзор по сниппетам (Tavily). "
+            "опционально Semantic Scholar; загрузка PDF (POST /documents/pdf) подмешивается к кандидатам; "
+            "отдельно веб-обзор по сниппетам (Tavily). "
             "Двуязычный дайджест через LLM. "
-            "Периодический режим со снимками: POST /digests/periodic (алиас /digests/monthly)."
+            "Периодический режим со снимками: POST /digests/periodic (алиас /digests/monthly); "
+            "расписание в API: GET/POST/PATCH/DELETE /digests/schedules при DIGEST_PERIODIC_SCHEDULER_ENABLED. "
+            "Опционально AUTH_ENABLED + JWT: /auth/login, /auth/register; данные пользователей в SNAPSHOT_DATABASE_URL."
         ),
     )
     app.add_middleware(RequestIdMiddleware)

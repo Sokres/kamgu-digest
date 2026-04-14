@@ -129,7 +129,25 @@
     }
 }
 
+@media print {
+  body {
+    background: white !important;
+    background-image: none !important;
+  }
+}
+
+.digest-prose pre {
+  max-width: 65ch;
+}
+
 /* Subtle app canvas (dashboard-style depth) */
+html:not(.dark) body {
+  background-color: var(--background);
+  background-image:
+    radial-gradient(ellipse 100% 80% at 100% 0%, oklch(0.97 0.02 277 / 0.9), transparent 52%),
+    radial-gradient(ellipse 80% 60% at 0% 100%, oklch(0.96 0.015 300 / 0.65), transparent 48%);
+}
+
 .dark body {
   background-color: var(--background);
   background-image:
