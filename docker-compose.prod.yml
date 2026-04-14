@@ -27,7 +27,8 @@ services:
     environment:
       # Задайте в корневом .env (пароль с символами @ : / ? должен быть %-кодирован).
       # Сгенерировать: python3 deploy/snapshot_dsn.py
-      SNAPSHOT_DATABASE_URL: ${SNAPSHOT_DATABASE_URL:?Set SNAPSHOT_DATABASE_URL in .env — run: python3 deploy/snapshot_dsn.py}
+      # Сообщение без «: » внутри ${...:?...} — иначе YAML ломается. См. deploy/snapshot_dsn.py
+      SNAPSHOT_DATABASE_URL: ${SNAPSHOT_DATABASE_URL:?SNAPSHOT_DATABASE_URL_missing_run_python3_deploy_snapshot_dsn_py}
       # Браузерный фронт на другом хосте; без этого остаётся дефолт localhost:5173 → CORS в проде.
       CORS_ORIGINS: ${CORS_ORIGINS:-https://kamgu.24msg.ru}
     depends_on:
