@@ -9,7 +9,13 @@ import { Separator } from '@/components/ui/separator'
 import { fetchHealth } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { BookSearchIcon, Calendar03Icon, PresentationBarChart01Icon, Settings02Icon } from '@hugeicons/core-free-icons'
+import {
+  BookSearchIcon,
+  Bookmark01Icon,
+  Calendar03Icon,
+  PresentationBarChart01Icon,
+  Settings02Icon,
+} from '@hugeicons/core-free-icons'
 
 const ROUTE_META: Record<string, { title: string; subtitle: string }> = {
   '/': {
@@ -24,6 +30,22 @@ const ROUTE_META: Record<string, { title: string; subtitle: string }> = {
     title: 'Тренды',
     subtitle: 'История снимков по profile_id и динамика размера топа по периодам',
   },
+  '/saved': {
+    title: 'Сохранённые',
+    subtitle: 'Архив разовых дайджестов, сохранённых в базу на сервере',
+  },
+}
+
+function routeMeta(pathname: string): { title: string; subtitle: string } {
+  if (pathname === '/saved' || pathname.startsWith('/saved/')) {
+    return pathname === '/saved'
+      ? ROUTE_META['/saved']
+      : {
+          title: 'Сохранённый дайджест',
+          subtitle: 'Просмотр записи из архива',
+        }
+  }
+  return ROUTE_META[pathname] ?? ROUTE_META['/']
 }
 
 function HealthBadge({ apiBase }: { apiBase: string }) {
@@ -82,7 +104,7 @@ export function AppLayout(props: {
   const location = useLocation()
   const navigate = useNavigate()
   const { authEnabled, username, logout } = useAuth()
-  const meta = ROUTE_META[location.pathname] ?? ROUTE_META['/']
+  const meta = routeMeta(location.pathname)
 
   function handleLogout() {
     logout()
@@ -120,6 +142,10 @@ export function AppLayout(props: {
           <NavLink to="/trends" className={(p) => cn(navClass(p), 'flex-1 justify-center md:flex-none md:justify-start')}>
             <HugeiconsIcon icon={PresentationBarChart01Icon} strokeWidth={2} className="size-[18px] opacity-90" />
             Тренды
+          </NavLink>
+          <NavLink to="/saved" className={(p) => cn(navClass(p), 'flex-1 justify-center md:flex-none md:justify-start')}>
+            <HugeiconsIcon icon={Bookmark01Icon} strokeWidth={2} className="size-[18px] opacity-90" />
+            Сохранённые
           </NavLink>
         </nav>
 

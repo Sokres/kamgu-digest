@@ -10,6 +10,10 @@ import type {
   PeriodicDigestScheduleCreate,
   PeriodicDigestScheduleOut,
   PeriodicDigestScheduleUpdate,
+  SavedDigestCreateBody,
+  SavedDigestCreated,
+  SavedDigestListItem,
+  SavedDigestOut,
   TrendProfileLabelUpdate,
   TrendProfileSummary,
   TrendSeriesResponse,
@@ -130,6 +134,79 @@ export async function fetchHealth(baseUrl: string): Promise<{ status: string }> 
   const r = await fetch(`${baseUrl}/health`)
   if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
   return r.json() as Promise<{ status: string }>
+}
+
+export async function listSavedDigests(
+  baseUrl: string,
+  options?: { signal?: AbortSignal; accessToken?: string },
+): Promise<SavedDigestListItem[]> {
+  let r: Response
+  try {
+    r = await fetch(`${baseUrl}/saved-digests`, {
+      headers: { ...authOnlyHeaders(options) },
+      signal: options?.signal,
+    })
+  } catch (e) {
+    mapFetchError(e)
+  }
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+  return r.json() as Promise<SavedDigestListItem[]>
+}
+
+export async function getSavedDigest(
+  baseUrl: string,
+  id: string,
+  options?: { signal?: AbortSignal; accessToken?: string },
+): Promise<SavedDigestOut> {
+  let r: Response
+  try {
+    r = await fetch(`${baseUrl}/saved-digests/${encodeURIComponent(id)}`, {
+      headers: { ...authOnlyHeaders(options) },
+      signal: options?.signal,
+    })
+  } catch (e) {
+    mapFetchError(e)
+  }
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+  return r.json() as Promise<SavedDigestOut>
+}
+
+export async function saveDigest(
+  baseUrl: string,
+  body: SavedDigestCreateBody,
+  options?: { signal?: AbortSignal; accessToken?: string },
+): Promise<SavedDigestCreated> {
+  let r: Response
+  try {
+    r = await fetch(`${baseUrl}/saved-digests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authOnlyHeaders(options) },
+      body: JSON.stringify(body),
+      signal: options?.signal,
+    })
+  } catch (e) {
+    mapFetchError(e)
+  }
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+  return r.json() as Promise<SavedDigestCreated>
+}
+
+export async function deleteSavedDigest(
+  baseUrl: string,
+  id: string,
+  options?: { signal?: AbortSignal; accessToken?: string },
+): Promise<void> {
+  let r: Response
+  try {
+    r = await fetch(`${baseUrl}/saved-digests/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { ...authOnlyHeaders(options) },
+      signal: options?.signal,
+    })
+  } catch (e) {
+    mapFetchError(e)
+  }
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
 }
 
 export async function createDigest(

@@ -56,6 +56,14 @@ CREATE TABLE IF NOT EXISTS auth_users (
     password_hash TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS saved_digests (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_saved_digests_user_created ON saved_digests(user_id, created_at DESC);
 """
 
 CREATE_SQL_POSTGRES_DIGEST = """
@@ -105,6 +113,17 @@ CREATE TABLE IF NOT EXISTS auth_users (
     password_hash TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+"""
+
+CREATE_SQL_POSTGRES_SAVED_DIGESTS = """
+CREATE TABLE IF NOT EXISTS saved_digests (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_saved_digests_user_created ON saved_digests(user_id, created_at DESC);
 """
 
 Backend = Literal["sqlite", "postgres"]
@@ -361,6 +380,7 @@ def init_snapshot_schema(conn: sqlite3.Connection | PgConnection) -> None:
         conn.execute(CREATE_SQL_POSTGRES_LABELS)
         conn.execute(CREATE_SQL_POSTGRES_SCHEDULES)
         conn.execute(CREATE_SQL_POSTGRES_AUTH_USERS)
+        conn.execute(CREATE_SQL_POSTGRES_SAVED_DIGESTS)
     ensure_multiuser_schema(conn)
 
 

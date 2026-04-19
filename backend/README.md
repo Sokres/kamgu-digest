@@ -52,6 +52,15 @@ curl -s http://localhost:8080/digests \
 
 Ответ: `publications_used`, `article_cards`, `digest_ru`, `digest_en`, поле `meta` (счётчики, время, опционально `warnings` при сбое HTTP к источнику).
 
+### Сохранённые дайджесты (`GET/POST/DELETE /saved-digests`)
+
+Полный ответ разового `POST /digests` можно **сохранить в базу** (та же `SNAPSHOT_DATABASE_URL`, что и для снимков трендов): таблица `saved_digests`, изоляция по `user_id` (JWT при `AUTH_ENABLED` или `AUTH_LEGACY_USER_ID` без авторизации).
+
+- `POST /saved-digests` — тело: `title`, `digest_response` (как в ответе `/digests`), опционально `request_snapshot` (параметры запроса для справки). Лимит размера: `SAVED_DIGEST_MAX_PAYLOAD_BYTES` (по умолчанию 4 МБ).
+- `GET /saved-digests` — список метаданных; `GET /saved-digests/{id}` — полная запись; `DELETE /saved-digests/{id}` — удаление своей записи.
+
+Во фронте KamGU: раздел **«Сохранённые»** и кнопка «Сохранить в архив» на странице дайджеста после успешного ответа.
+
 ### Периодический дайджест с трендами (`POST /digests/periodic`, алиас `POST /digests/monthly`)
 
 Сохраняет **снимок** топ-статей по профилю в **PostgreSQL** (или **SQLite**, если задан `sqlite:///...` в `SNAPSHOT_DATABASE_URL`), сравнивает с предыдущим сохранённым периодом и возвращает `structured_delta` (прирост цитирований, вошли/вышли из топ-K, сдвиги долей OpenAlex-concepts) плюс текст от LLM с дисклеймером. Имя пути **`/digests/monthly`** оставлено для совместимости; канонический путь — **`/digests/periodic`**. Частоту можно задать **внешним** cron или **встроенным** планировщиком: `DIGEST_PERIODIC_SCHEDULER_ENABLED=true` и CRUD **`/digests/schedules`** (один процесс uvicorn, см. `.env.example`).

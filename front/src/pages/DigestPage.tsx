@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { Link, useOutletContext } from 'react-router-dom'
 
 import { DigestPresetsBar } from '@/components/DigestPresetsBar'
 import { DigestResultView } from '@/components/DigestResultView'
@@ -17,9 +17,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { ApiError, createDigest, uploadPdfDocument } from '@/lib/api'
+import { ApiError, createDigest, saveDigest, uploadPdfDocument } from '@/lib/api'
 import type { DigestFormPreset } from '@/lib/digestPresets'
 import type { DigestMode, DigestRequest, DigestResponse } from '@/types/api'
 
@@ -65,6 +73,8 @@ export function DigestPage() {
   const [excludeDois, setExcludeDois] = useState('')
   const [webScholarlyOnly, setWebScholarlyOnly] = useState(true)
   const [webExtraTerms, setWebExtraTerms] = useState('')
+  const [fetchOaFulltext, setFetchOaFulltext] = useState(false)
+  const [deepDigest, setDeepDigest] = useState(false)
 
   const [pdfAttachments, setPdfAttachments] = useState<{ id: string; name: string }[]>([])
   const [pdfUploading, setPdfUploading] = useState(false)
@@ -73,6 +83,12 @@ export function DigestPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<DigestResponse | null>(null)
+  const [lastRequestSnapshot, setLastRequestSnapshot] = useState<DigestRequest | null>(null)
+  const [saveOpen, setSaveOpen] = useState(false)
+  const [saveTitle, setSaveTitle] = useState('')
+  const [saveBusy, setSaveBusy] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [savedId, setSavedId] = useState<string | null>(null)
 
   function addTopic() {
     setTopics((t) => [...t, ''])
@@ -158,6 +174,8 @@ export function DigestPage() {
       if (pdfAttachments.length) {
         body.attached_document_ids = pdfAttachments.map((p) => p.id)
       }
+      body.fetch_oa_fulltext = fetchOaFulltext
+      body.deep_digest = deepDigest
     }
 
     if (digestMode === 'web_snippets') {
@@ -168,9 +186,11 @@ export function DigestPage() {
 
     setLoading(true)
     setData(null)
+    setLastRequestSnapshot(null)
     try {
       const res = await createDigest(apiBase, body)
       setData(res)
+      setLastRequestSnapshot(body)
     } catch (err) {
       setData(null)
       if (err instanceof ApiError) {
@@ -180,6 +200,44 @@ export function DigestPage() {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  function openSaveSheet() {
+    const q = topics.map((s) => s.trim()).filter(Boolean)
+    const head = q[0]?.slice(0, 60) ?? 'Дайджест'
+    setSaveTitle(
+      `${new Date().toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })} — ${head}`,
+    )
+    setSaveError(null)
+    setSavedId(null)
+    setSaveOpen(true)
+  }
+
+  async function handleSaveToServer() {
+    if (!data || !lastRequestSnapshot) return
+    const t = saveTitle.trim()
+    if (!t) {
+      setSaveError('Введите название.')
+      return
+    }
+    setSaveBusy(true)
+    setSaveError(null)
+    try {
+      const created = await saveDigest(apiBase, {
+        title: t,
+        digest_response: data,
+        request_snapshot: lastRequestSnapshot,
+      })
+      setSavedId(created.id)
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setSaveError(err.message)
+      } else {
+        setSaveError(err instanceof Error ? err.message : String(err))
+      }
+    } finally {
+      setSaveBusy(false)
     }
   }
 
@@ -196,6 +254,8 @@ export function DigestPage() {
       excludeDois,
       webScholarlyOnly,
       webExtraTerms,
+      fetchOaFulltext,
+      deepDigest,
       topics: [...topics],
     }),
     [
@@ -210,6 +270,8 @@ export function DigestPage() {
       excludeDois,
       webScholarlyOnly,
       webExtraTerms,
+      fetchOaFulltext,
+      deepDigest,
       topics,
     ],
   )
@@ -226,6 +288,8 @@ export function DigestPage() {
     setExcludeDois(p.excludeDois)
     setWebScholarlyOnly(p.webScholarlyOnly)
     setWebExtraTerms(p.webExtraTerms)
+    setFetchOaFulltext(p.fetchOaFulltext ?? false)
+    setDeepDigest(p.deepDigest ?? false)
     setTopics(p.topics.length ? [...p.topics] : [''])
   }
 
@@ -380,6 +444,46 @@ export function DigestPage() {
                       Только журнальные статьи
                     </Label>
                     <p className="text-xs text-muted-foreground">OpenAlex: type:article</p>
+                  </div>
+                </div>
+                <div className="space-y-4 rounded-lg border border-border/80 bg-muted/15 p-4">
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      id="fetch-oa"
+                      checked={fetchOaFulltext}
+                      onCheckedChange={(c) => setFetchOaFulltext(c === true)}
+                      className="mt-0.5"
+                    />
+                    <div className="space-y-1">
+                      <Label htmlFor="fetch-oa" className="cursor-pointer text-sm font-medium leading-snug">
+                        OA-полнотекст по DOI (Unpaywall)
+                      </Label>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Для открытых статей сервер запрашивает ссылку на PDF через Unpaywall, скачивает файл, извлекает
+                        текст и подмешивает его в анализ (кэш на диске). На сервере должен быть указан email
+                        для Unpaywall: переменные окружения{' '}
+                        <code className="rounded bg-muted px-1 py-0.5 text-[11px]">OPENALEX_MAILTO</code> или{' '}
+                        <code className="rounded bg-muted px-1 py-0.5 text-[11px]">UNPAYWALL_EMAIL</code>.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      id="deep-digest"
+                      checked={deepDigest}
+                      onCheckedChange={(c) => setDeepDigest(c === true)}
+                      className="mt-0.5"
+                    />
+                    <div className="space-y-1">
+                      <Label htmlFor="deep-digest" className="cursor-pointer text-sm font-medium leading-snug">
+                        Глубокий дайджест (двухэтапный LLM)
+                      </Label>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Сначала краткая выжимка по каждой статье, затем общий обзор. Удобно при длинных PDF и больших
+                        выборках; автоматически включается и при очень большом объёме текста. Больше вызовов к API
+                        модели.
+                      </p>
+                    </div>
                   </div>
                 </div>
                 <div className="space-y-3 rounded-lg border border-border/80 bg-muted/15 p-4">
@@ -545,9 +649,22 @@ export function DigestPage() {
       </Card>
 
       <section className="space-y-4">
-        <div>
-          <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Результат</h2>
-          <p className="mt-1 text-xs text-muted-foreground/90">Текст дайджеста и карточки источников</p>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Результат</h2>
+            <p className="mt-1 text-xs text-muted-foreground/90">Текст дайджеста и карточки источников</p>
+          </div>
+          {data && !loading ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="print:hidden"
+              onClick={() => openSaveSheet()}
+            >
+              Сохранить в архив
+            </Button>
+          ) : null}
         </div>
         {!loading && !data && !error ? (
           <p className="rounded-lg border border-dashed border-border/80 bg-muted/15 px-4 py-3 text-sm text-muted-foreground print:hidden">
@@ -566,6 +683,52 @@ export function DigestPage() {
           data={data}
         />
       </section>
+
+      <Sheet open={saveOpen} onOpenChange={setSaveOpen}>
+        <SheetContent className="flex flex-col sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Сохранить в архив</SheetTitle>
+            <SheetDescription>
+              Запись будет доступна в разделе «Сохранённые» (та же база на сервере, что и тренды).
+            </SheetDescription>
+          </SheetHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="save-title">Название</Label>
+              <Input
+                id="save-title"
+                value={saveTitle}
+                onChange={(e) => setSaveTitle(e.target.value)}
+                placeholder="Краткая подпись"
+              />
+            </div>
+            {saveError ? (
+              <Alert variant="destructive">
+                <AlertDescription>{saveError}</AlertDescription>
+              </Alert>
+            ) : null}
+            {savedId ? (
+              <Alert>
+                <AlertTitle>Сохранено</AlertTitle>
+                <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <span>Можно открыть в архиве.</span>
+                  <Button type="button" variant="outline" size="sm" asChild>
+                    <Link to={`/saved/${savedId}`}>Открыть</Link>
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            ) : null}
+          </div>
+          <SheetFooter className="mt-auto gap-2 sm:justify-between">
+            <Button type="button" variant="outline" onClick={() => setSaveOpen(false)}>
+              Закрыть
+            </Button>
+            <Button type="button" disabled={saveBusy || !!savedId} onClick={() => void handleSaveToServer()}>
+              {saveBusy ? 'Сохранение…' : 'Сохранить'}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }

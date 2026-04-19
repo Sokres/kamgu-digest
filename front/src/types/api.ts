@@ -25,6 +25,10 @@ export interface DigestRequest {
   web_search_additional_terms?: string[]
   /** Id из POST /documents/pdf; учитываются в peer_reviewed */
   attached_document_ids?: string[]
+  /** Скачать OA PDF по DOI (Unpaywall), извлечь текст для LLM; нужен email на сервере */
+  fetch_oa_fulltext?: boolean
+  /** Принудительно двухэтапный LLM (карта по статьям + сводка) */
+  deep_digest?: boolean
 }
 
 export interface PublicationInput {
@@ -61,6 +65,10 @@ export interface DigestMeta {
   web_scholarly_domain_filter?: boolean
   /** Загруженных PDF в кандидатах (peer_reviewed) */
   user_pdf_documents?: number
+  /** Работ с расширенным текстом из OA PDF */
+  oa_fulltext_fetched?: number
+  /** Использован двухэтапный LLM */
+  two_stage_llm?: boolean
   after_dedupe?: number
   used_for_llm?: number
   elapsed_seconds?: number
@@ -73,6 +81,34 @@ export interface DigestResponse {
   digest_ru: string
   digest_en: string
   meta?: DigestMeta
+}
+
+export interface SavedDigestListItem {
+  id: string
+  title: string
+  created_at: string
+  digest_mode?: DigestMode
+  used_for_llm?: number | null
+  elapsed_seconds?: number | null
+}
+
+export interface SavedDigestOut {
+  id: string
+  title: string
+  created_at: string
+  digest_response: DigestResponse
+  request_snapshot?: DigestRequest | null
+}
+
+export interface SavedDigestCreated {
+  id: string
+  created_at: string
+}
+
+export interface SavedDigestCreateBody {
+  title: string
+  digest_response: DigestResponse
+  request_snapshot?: DigestRequest | null
 }
 
 export interface PdfDocumentUploadResponse {
@@ -91,6 +127,8 @@ export interface MonthlyDigestRequest {
   to_year?: number | null
   exclude_dois?: string[]
   force_period?: string | null
+  fetch_oa_fulltext?: boolean
+  deep_digest?: boolean
 }
 
 export interface WorkCitationDelta {

@@ -59,6 +59,14 @@ function MetaBlock({ meta }: { meta?: DigestMeta }) {
         label: 'PDF (загрузки)',
         value: meta.user_pdf_documents ?? '—',
       },
+      {
+        label: 'OA PDF (Unpaywall)',
+        value: meta.oa_fulltext_fetched ?? '—',
+      },
+      {
+        label: 'Двухэтапный LLM',
+        value: meta.two_stage_llm === true ? 'да' : meta.two_stage_llm === false ? 'нет' : '—',
+      },
       { label: 'После дедупа', value: meta.after_dedupe ?? '—' },
     )
   }

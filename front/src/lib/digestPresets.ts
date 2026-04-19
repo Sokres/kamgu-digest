@@ -17,6 +17,9 @@ export interface DigestFormPreset {
   excludeDois: string
   webScholarlyOnly: boolean
   webExtraTerms: string
+  /** Сохранённые флаги расширенного дайджеста (опционально для старых пресетов) */
+  fetchOaFulltext?: boolean
+  deepDigest?: boolean
   topics: string[]
 }
 

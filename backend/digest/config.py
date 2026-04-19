@@ -18,6 +18,22 @@ class Settings(BaseSettings):
     # Ретраи при 429 у OpenRouter / провайдера (:free модели часто «upstream rate limited»).
     llm_max_retries: int = 8
     llm_retry_base_seconds: float = 4.0
+    # Сколько символов поля abstract уходит в промпт LLM на одну публикацию (источники с метаданными).
+    llm_max_abstract_chars_per_pub: int = 12_000
+    # Загруженные пользователем PDF и извлечённый OA-полнотекст: больший лимит.
+    llm_max_abstract_chars_longtext: int = 24_000
+    # Если оценка размера JSON user payload превышает порог — map-reduce (отдельный вызов на статью + сводка).
+    llm_digest_prompt_budget_chars: int = 900_000
+    # Параллельные map-вызовы LLM при двухэтапном дайджесте.
+    llm_digest_map_concurrency: int = 3
+    # Unpaywall (email обязателен для API): по умолчанию берётся OPENALEX_MAILTO, иначе пусто = OA-полнотекст недоступен.
+    unpaywall_email: str = ""
+    # Каталог кэша извлечённого текста по DOI (json рядом с сырыми pdf при желании).
+    oa_fulltext_cache_dir: str = "data/oa_fulltext_cache"
+    # Максимум статей за один дайджест, для которых тянем OA PDF (остальные только abstract из метаданных).
+    oa_fulltext_max_per_digest: int = 8
+    # Максимальный размер скачиваемого OA PDF (байты).
+    oa_fulltext_max_download_bytes: int = 25 * 1024 * 1024
 
     # Semantic Scholar / часть CDN режут запросы без нормального User-Agent → 403.
     # Пусто = см. openalex_mailto или строка по умолчанию.
@@ -56,8 +72,9 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
-    # Ежемесячные снимки: PostgreSQL (прод/крон) или SQLite без Docker — см. SNAPSHOT_DATABASE_URL в README
-    snapshot_database_url: str = "postgresql://postgres:postgres@127.0.0.1:5432/kamgu_digest"
+    # Ежемесячные снимки: PostgreSQL (прод/docker-compose) или SQLite локально — см. SNAPSHOT_DATABASE_URL в README.
+    # По умолчанию SQLite, чтобы uvicorn без Docker и без .env не отдавал 503 на /auth/login из‑за недоступного Postgres.
+    snapshot_database_url: str = "sqlite:///./snapshots.db"
     # Встроенный APScheduler: POST /digests/schedules. Включайте только при одном воркере uvicorn.
     digest_periodic_scheduler_enabled: bool = False
     # Если задан — POST /digests/monthly и /digests/periodic требуют заголовок X-Internal-Key с тем же значением.
@@ -65,6 +82,10 @@ class Settings(BaseSettings):
 
     # Лимит POST /digests на один IP за скользящее окно 60 с (0 = отключено).
     digest_rate_limit_per_minute: int = 0
+    # POST /saved-digests: максимальный размер JSON payload (байты).
+    saved_digest_max_payload_bytes: int = 4 * 1024 * 1024
+    # Длина названия сохранённого дайджеста.
+    saved_digest_title_max_length: int = 200
 
     # Загрузка PDF для дайджеста: каталог на диске (uuid.pdf + uuid.json)
     documents_storage_dir: str = "data/documents"
@@ -93,6 +114,13 @@ class Settings(BaseSettings):
         if "openrouter" in base:
             return b or a
         return a or b
+
+    def unpaywall_email_resolved(self) -> str:
+        """Email для Unpaywall API (обязателен ими); иначе пусто — OA PDF не запрашиваем."""
+        e = (self.unpaywall_email or "").strip()
+        if e:
+            return e
+        return (self.openalex_mailto or "").strip()
 
     def llm_api_key_source_label(self) -> str:
         """Какая переменная окружения дала ключ (для логов)."""

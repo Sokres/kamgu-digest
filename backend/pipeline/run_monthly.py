@@ -28,6 +28,7 @@ from pipeline.llm import generate_monthly_digest_llm
 from pipeline.monthly_diff import compute_monthly_structured_delta
 from pipeline.score import rank_for_llm
 from pipeline.ingest_sources import ingest_peer_reviewed_sources
+from sources.oa_fulltext import enrich_publications_with_oa_fulltext
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,16 @@ async def run_monthly_digest(req: MonthlyDigestRequest, user_id: str) -> Monthly
     deduped = dedupe_publications(raw, exclude)
     ranked = rank_for_llm(deduped, digest_req.topic_queries, digest_req.top_n_for_llm)
 
+    oa_n = 0
+    if req.fetch_oa_fulltext and ranked:
+        oa_timeout = httpx.Timeout(max(float(settings.http_timeout_seconds), 120.0))
+        async with httpx.AsyncClient(
+            timeout=oa_timeout,
+            headers=settings.http_client_headers(),
+        ) as oa_client:
+            ranked, oa_warn, oa_n = await enrich_publications_with_oa_fulltext(oa_client, ranked)
+            meta_warnings.extend(oa_warn)
+
     logger.info(
         "Monthly ingest profile=%s period=%s: openalex=%s ss=%s core=%s crossref_dois=%s deduped=%s ranked=%s",
         req.profile_id,
@@ -153,8 +164,8 @@ async def run_monthly_digest(req: MonthlyDigestRequest, user_id: str) -> Monthly
         trend_top_k=req.trend_top_k,
     )
 
-    llm = await generate_monthly_digest_llm(
-        ranked, req.topic_queries, structured
+    llm, two_stage = await generate_monthly_digest_llm(
+        ranked, req.topic_queries, structured, force_two_stage=req.deep_digest
     )
 
     digest_ru = llm.digest_ru.strip()
@@ -196,6 +207,8 @@ async def run_monthly_digest(req: MonthlyDigestRequest, user_id: str) -> Monthly
         period=period,
         compared_period=compared_period,
         snapshot_saved=snapshot_saved,
+        oa_fulltext_fetched=oa_n,
+        two_stage_llm=two_stage,
     )
 
     return MonthlyDigestResponse(

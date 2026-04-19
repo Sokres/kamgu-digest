@@ -59,6 +59,20 @@ class DigestRequest(BaseModel):
             "Учитываются в режиме peer_reviewed; для web_snippets игнорируются."
         ),
     )
+    fetch_oa_fulltext: bool = Field(
+        False,
+        description=(
+            "Только peer_reviewed: для открытых публикаций с DOI попытаться скачать OA PDF "
+            "(Unpaywall), извлечь текст и передать в LLM (кэш на диске)."
+        ),
+    )
+    deep_digest: bool = Field(
+        False,
+        description=(
+            "Принудительно двухэтапный LLM (краткая выжимка по каждой статье, затем сводный дайджест). "
+            "Иначе двухэтапный режим включается автоматически при большом объёме текста."
+        ),
+    )
 
     @field_validator("from_year", "to_year", mode="before")
     @classmethod
@@ -149,6 +163,14 @@ class DigestMeta(BaseModel):
         default_factory=list,
         description="Например, сбой HTTP к источнику (частичный или пустой результат).",
     )
+    oa_fulltext_fetched: int = Field(
+        0,
+        description="Число работ, для которых подтянут и разобран OA PDF (peer_reviewed + fetch_oa_fulltext).",
+    )
+    two_stage_llm: bool = Field(
+        False,
+        description="Использован ли двухэтапный LLM (map-reduce) вместо одного запроса.",
+    )
 
 
 class PdfDocumentUploadResponse(BaseModel):
@@ -165,6 +187,44 @@ class DigestResponse(BaseModel):
     digest_ru: str
     digest_en: str
     meta: DigestMeta = Field(default_factory=DigestMeta)
+
+
+class SavedDigestEnvelope(BaseModel):
+    """Тело payload_json в saved_digests."""
+
+    version: Literal[1] = 1
+    digest_response: DigestResponse
+    request: DigestRequest | None = None
+
+
+class SavedDigestCreate(BaseModel):
+    """POST /saved-digests."""
+
+    title: str = Field(..., min_length=1, max_length=200)
+    digest_response: DigestResponse
+    request_snapshot: DigestRequest | None = None
+
+
+class SavedDigestListItem(BaseModel):
+    id: str
+    title: str
+    created_at: str
+    digest_mode: DigestMode = "peer_reviewed"
+    used_for_llm: int | None = None
+    elapsed_seconds: float | None = None
+
+
+class SavedDigestOut(BaseModel):
+    id: str
+    title: str
+    created_at: str
+    digest_response: DigestResponse
+    request_snapshot: DigestRequest | None = None
+
+
+class SavedDigestCreated(BaseModel):
+    id: str
+    created_at: str
 
 
 class SnapshotWorkRecord(BaseModel):
@@ -212,6 +272,14 @@ class MonthlyDigestRequest(BaseModel):
     force_period: str | None = Field(
         None,
         description="Переопределить период снимка YYYY-MM (UTC), иначе текущий месяц.",
+    )
+    fetch_oa_fulltext: bool = Field(
+        False,
+        description="Как у POST /digests: при наличии DOI подтянуть OA PDF (Unpaywall) и извлечь текст для LLM.",
+    )
+    deep_digest: bool = Field(
+        False,
+        description="Как у POST /digests: принудительный двухэтапный LLM.",
     )
 
     @field_validator("force_period")

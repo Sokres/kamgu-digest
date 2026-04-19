@@ -11,6 +11,7 @@ from pipeline.ingest_sources import ingest_peer_reviewed_sources
 from pipeline.llm import generate_digest_llm
 from pipeline.score import rank_for_llm
 from sources.crossref import enrich_publications_crossref
+from sources.oa_fulltext import enrich_publications_with_oa_fulltext
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,16 @@ async def run_digest(req: DigestRequest, document_user_id: str | None = None) ->
     deduped = dedupe_publications(raw, exclude)
     ranked = rank_for_llm(deduped, req.topic_queries, req.top_n_for_llm)
 
+    oa_n = 0
+    if req.fetch_oa_fulltext and ranked:
+        oa_timeout = httpx.Timeout(max(float(settings.http_timeout_seconds), 120.0))
+        async with httpx.AsyncClient(
+            timeout=oa_timeout,
+            headers=settings.http_client_headers(),
+        ) as oa_client:
+            ranked, oa_warn, oa_n = await enrich_publications_with_oa_fulltext(oa_client, ranked)
+            meta_warnings.extend(oa_warn)
+
     logger.info(
         "Ingest: openalex=%s semantic_scholar=%s core=%s crossref_dois=%s deduped=%s ranked_for_llm=%s",
         oa_count,
@@ -95,7 +106,9 @@ async def run_digest(req: DigestRequest, document_user_id: str | None = None) ->
             + extra_pdf
         )
 
-    llm = await generate_digest_llm(ranked, req.topic_queries)
+    llm, two_stage = await generate_digest_llm(
+        ranked, req.topic_queries, force_two_stage=req.deep_digest
+    )
 
     digest_ru = llm.digest_ru.strip()
     digest_en = llm.digest_en.strip()
@@ -118,6 +131,8 @@ async def run_digest(req: DigestRequest, document_user_id: str | None = None) ->
         used_for_llm=len(ranked),
         elapsed_seconds=round(elapsed, 3),
         warnings=meta_warnings,
+        oa_fulltext_fetched=oa_n,
+        two_stage_llm=two_stage,
     )
     logger.info("digest done %s", meta.model_dump())
 

@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 
 SYSTEM = """You are a research assistant producing digests for a lab.
 Rules:
-- Use ONLY the provided publication fields (title, year, url, doi, abstract; optional is_open_access, oa_url). Do not invent methods, results, or citations.
+- Use ONLY the provided publication fields (title, year, url, doi, abstract; optional is_open_access, oa_url). The field abstract_text_kind tells you what "abstract" contains: metadata_abstract (journal abstract), pdf_excerpt (first pages from a user PDF), or oa_fulltext_excerpt (longer excerpt from an open-access PDF). For excerpts, focus on visible content only; do not infer unseen parts of the paper.
+- Do not invent methods, results, numbers, or citations not supported by the provided text.
 - If abstract is empty, base bullets only on the title and state uncertainty briefly.
 - Respond with a single JSON object, no markdown fences.
 JSON shape:
@@ -36,6 +37,45 @@ JSON shape:
   ]
 }
 Include one article_card per input publication, in the same order as given."""
+
+SYSTEM_MAP_PAPER = """You analyze ONE publication record for a research lab digest.
+The "abstract" field may be a journal abstract (metadata_abstract), text from the first pages of a PDF (pdf_excerpt), or a longer excerpt from an open-access PDF (oa_fulltext_excerpt) — see abstract_text_kind.
+Rules:
+- Use ONLY the provided publication fields. Do not invent statistics, methods, or results not supported by the text.
+- If the text is short or empty, say so briefly and stay conservative.
+- Respond with a single JSON object, no markdown fences.
+JSON shape:
+{
+  "title_match": "must equal the input title exactly",
+  "summary_ru": "3-6 sentences: goal, approach if visible, main point or limitation",
+  "summary_en": "same in English",
+  "bullets_ru": ["2-4 short points grounded in the text"],
+  "bullets_en": ["2-4 short points in English"],
+  "why_relevant": "one sentence tying the paper to the user topics"
+}"""
+
+SYSTEM_REDUCE = """You synthesize a research digest from per-paper summaries only (the full text was already summarized per paper).
+Rules:
+- Use ONLY paper_summaries and topics. Do not invent statistics, DOIs, or claims not present in the summaries.
+- article_cards: "title" must match each paper_summaries[].title exactly, in the same order as given.
+- Respond with a single JSON object, no markdown fences.
+Same JSON shape as the standard digest:
+{
+  "overview_ru": "2-4 sentences",
+  "overview_en": "2-4 sentences",
+  "digest_ru": "Markdown: sections Overview, Theme clusters (if clear), Highlights per paper",
+  "digest_en": "Same structure in English",
+  "article_cards": [
+    {
+      "title": "must match an input title exactly",
+      "url": "from paper_summaries or empty",
+      "year": null,
+      "bullets": ["2-3 short points from summaries"],
+      "why_relevant": "one sentence tied to the user's topics"
+    }
+  ]
+}
+Include one article_card per paper_summaries entry, in the same order as given."""
 
 SYSTEM_WEB = """You summarize WEB SEARCH SNIPPETS for a research lab (not peer-reviewed literature).
 Rules:
@@ -66,7 +106,7 @@ Include one article_card per input snippet, in the same order as given."""
 
 SYSTEM_MONTHLY = """You are a research assistant writing a MONTHLY trend digest for a research lab.
 Rules:
-- Use ONLY facts present in structured_delta and publication fields (title, year, url, doi, abstract, optional concept names). Do not invent citation counts, ranks, or concept shares.
+- Use ONLY facts present in structured_delta and publication fields (title, year, url, doi, abstract, abstract_text_kind, optional concept names). abstract_text_kind indicates metadata_abstract vs pdf_excerpt vs oa_fulltext_excerpt. Do not invent citation counts, ranks, or concept shares.
 - If is_baseline is true, state clearly that this is the first stored snapshot and month-to-month comparisons are unavailable; still summarize current papers.
 - In digest_ru and digest_en, use Markdown with these sections in order:
   1) **Disclaimer** (one short paragraph): metrics come from snapshot comparisons of this corpus; citation data lag; "popularity" means citation change / rank within this sample, not definitive global impact.
@@ -84,6 +124,27 @@ Same JSON shape as the standard digest:
   "article_cards": [ ... one per input publication, same order ... ]
 }
 Include one article_card per input publication, in the same order as given."""
+
+SYSTEM_REDUCE_MONTHLY = """You are a research assistant writing a MONTHLY trend digest for a research lab.
+You receive structured_delta (metric comparisons between snapshots) and paper_summaries (short per-paper notes derived from abstracts or excerpts, not full papers).
+Rules:
+- Use ONLY facts present in structured_delta and paper_summaries. Do not invent citation counts, ranks, or concept shares — quantitative claims must come from structured_delta.
+- If is_baseline is true, state clearly that this is the first stored snapshot and month-to-month comparisons are unavailable; still summarize current papers from paper_summaries.
+- In digest_ru and digest_en, use Markdown with these sections in order:
+  1) **Disclaimer** (one short paragraph): metrics come from snapshot comparisons of this corpus; citation data lag; "popularity" means citation change / rank within this sample, not definitive global impact.
+  2) **Observed metric shifts** — only quantitative/tabular facts from structured_delta (top citation gains, entered/left top-K, concept share deltas). If a list is empty, say so briefly.
+  3) **Current highlights** — thematic clusters and paper points from paper_summaries.
+  4) **Risks and discussion hypotheses** — clearly label as hypotheses and questions for expert discussion, NOT as facts or firm predictions about the field going "wrong".
+- article_cards: one per paper_summaries entry, same order; "title" must match paper_summaries[].title exactly; bullets grounded in paper_summaries.
+- Respond with a single JSON object, no markdown fences.
+Same JSON shape as the standard digest:
+{
+  "overview_ru": "2-4 sentences",
+  "overview_en": "2-4 sentences",
+  "digest_ru": "Markdown sections as above",
+  "digest_en": "Same structure in English",
+  "article_cards": [ ... one per paper_summaries item, same order ... ]
+}"""
 
 
 def _retry_after_from_exc(exc: Exception) -> float | None:
@@ -113,13 +174,32 @@ def _strip_json_fence(text: str) -> str:
     return t
 
 
+def _abstract_chars_limit(p: PublicationInput) -> int:
+    s = (p.source or "").lower()
+    if s in ("user_pdf", "oa_fulltext"):
+        return settings.llm_max_abstract_chars_longtext
+    return settings.llm_max_abstract_chars_per_pub
+
+
+def _abstract_text_kind(p: PublicationInput) -> str:
+    s = (p.source or "").lower()
+    if s == "user_pdf":
+        return "pdf_excerpt"
+    if s == "oa_fulltext":
+        return "oa_fulltext_excerpt"
+    return "metadata_abstract"
+
+
 def _pub_dict(p: PublicationInput) -> dict[str, Any]:
+    lim = _abstract_chars_limit(p)
+    ab = (p.abstract or "")[:lim] if p.abstract else ""
     d: dict[str, Any] = {
         "title": p.title,
         "year": p.year,
         "url": p.url,
         "doi": p.doi,
-        "abstract": p.abstract[:8000] if p.abstract else "",
+        "abstract": ab,
+        "abstract_text_kind": _abstract_text_kind(p),
     }
     if p.is_open_access is not None:
         d["is_open_access"] = p.is_open_access
@@ -134,6 +214,121 @@ def _pub_dict_monthly(p: PublicationInput) -> dict[str, Any]:
     d["openalex_work_id"] = p.openalex_work_id
     d["concept_names_top"] = names[:8]
     return d
+
+
+def _digest_user_payload(
+    publications: list[PublicationInput], topic_queries: list[str]
+) -> dict[str, Any]:
+    return {
+        "topics": topic_queries,
+        "publications": [_pub_dict(p) for p in publications],
+    }
+
+
+def _estimate_digest_payload_chars(
+    publications: list[PublicationInput], topic_queries: list[str]
+) -> int:
+    return len(json.dumps(_digest_user_payload(publications, topic_queries), ensure_ascii=False))
+
+
+def _monthly_user_payload(
+    publications: list[PublicationInput],
+    topic_queries: list[str],
+    structured_delta: MonthlyStructuredDelta,
+) -> dict[str, Any]:
+    return {
+        "topics": topic_queries,
+        "is_baseline": structured_delta.is_baseline,
+        "structured_delta": structured_delta.model_dump(),
+        "publications": [_pub_dict_monthly(p) for p in publications],
+    }
+
+
+def _estimate_monthly_payload_chars(
+    publications: list[PublicationInput],
+    topic_queries: list[str],
+    structured_delta: MonthlyStructuredDelta,
+) -> int:
+    return len(
+        json.dumps(
+            _monthly_user_payload(publications, topic_queries, structured_delta),
+            ensure_ascii=False,
+        )
+    )
+
+
+async def _map_paper_summaries(
+    publications: list[PublicationInput],
+    topic_queries: list[str],
+) -> list[dict[str, Any]]:
+    sem = asyncio.Semaphore(max(1, settings.llm_digest_map_concurrency))
+
+    async def one(p: PublicationInput) -> dict[str, Any]:
+        async with sem:
+            data = await _chat_json_to_dict(
+                SYSTEM_MAP_PAPER,
+                {"topics": topic_queries, "publication": _pub_dict(p)},
+            )
+        bullets_ru = data.get("bullets_ru")
+        bullets_en = data.get("bullets_en")
+        if not isinstance(bullets_ru, list):
+            bullets_ru = []
+        if not isinstance(bullets_en, list):
+            bullets_en = []
+        return {
+            "title": p.title,
+            "url": p.url,
+            "year": p.year,
+            "doi": p.doi,
+            "summary_ru": str(data.get("summary_ru") or ""),
+            "summary_en": str(data.get("summary_en") or ""),
+            "bullets_ru": [str(x) for x in bullets_ru[:8]],
+            "bullets_en": [str(x) for x in bullets_en[:8]],
+            "why_relevant": str(data.get("why_relevant") or data.get("why_relevance") or ""),
+        }
+
+    return list(await asyncio.gather(*[one(p) for p in publications]))
+
+
+def _llm_result_from_raw(data: dict[str, Any]) -> DigestLLMResult:
+    try:
+        return DigestLLMResult.model_validate(data)
+    except ValidationError as e:
+        logger.warning("LLM JSON shape drift, using partial fallback: %s", e)
+        raw_fallback = json.dumps(data, ensure_ascii=False) if data else ""
+        return DigestLLMResult(
+            overview_ru=str(data.get("overview_ru") or ""),
+            overview_en=str(data.get("overview_en") or ""),
+            digest_ru=str(data.get("digest_ru") or raw_fallback[:8000]),
+            digest_en=str(data.get("digest_en") or ""),
+            article_cards=[],
+        )
+
+
+async def _generate_digest_llm_two_stage(
+    publications: list[PublicationInput],
+    topic_queries: list[str],
+) -> DigestLLMResult:
+    paper_summaries = await _map_paper_summaries(publications, topic_queries)
+    reduce_payload = {"topics": topic_queries, "paper_summaries": paper_summaries}
+    data = await _chat_json_to_dict(SYSTEM_REDUCE, reduce_payload)
+    return _llm_result_from_raw(data)
+
+
+async def _generate_monthly_digest_llm_two_stage(
+    publications: list[PublicationInput],
+    topic_queries: list[str],
+    structured_delta: MonthlyStructuredDelta,
+) -> DigestLLMResult:
+    paper_summaries = await _map_paper_summaries(publications, topic_queries)
+    reduce_payload = {
+        "topics": topic_queries,
+        "is_baseline": structured_delta.is_baseline,
+        "structured_delta": structured_delta.model_dump(),
+        "paper_summaries": paper_summaries,
+    }
+    data = await _chat_json_to_dict(SYSTEM_REDUCE_MONTHLY, reduce_payload)
+    return _llm_result_from_raw(data)
 
 
 def _make_openai_async_client() -> tuple[AsyncOpenAI, str]:
@@ -254,47 +449,45 @@ async def generate_web_digest_llm(
 async def generate_digest_llm(
     publications: list[PublicationInput],
     topic_queries: list[str],
-) -> DigestLLMResult:
-    user_payload = {
-        "topics": topic_queries,
-        "publications": [_pub_dict(p) for p in publications],
-    }
-    data = await _chat_json_to_dict(SYSTEM, user_payload)
-    try:
-        return DigestLLMResult.model_validate(data)
-    except ValidationError as e:
-        logger.warning("LLM JSON shape drift, using partial fallback: %s", e)
-        raw_fallback = json.dumps(data, ensure_ascii=False) if data else ""
-        return DigestLLMResult(
-            overview_ru=str(data.get("overview_ru") or ""),
-            overview_en=str(data.get("overview_en") or ""),
-            digest_ru=str(data.get("digest_ru") or raw_fallback[:8000]),
-            digest_en=str(data.get("digest_en") or ""),
-            article_cards=[],
+    *,
+    force_two_stage: bool = False,
+) -> tuple[DigestLLMResult, bool]:
+    est = _estimate_digest_payload_chars(publications, topic_queries)
+    use_two_stage = force_two_stage or est > settings.llm_digest_prompt_budget_chars
+    if use_two_stage:
+        logger.info(
+            "digest LLM: two-stage map-reduce (est_chars=%s budget=%s force=%s)",
+            est,
+            settings.llm_digest_prompt_budget_chars,
+            force_two_stage,
         )
+        return await _generate_digest_llm_two_stage(publications, topic_queries), True
+
+    user_payload = _digest_user_payload(publications, topic_queries)
+    data = await _chat_json_to_dict(SYSTEM, user_payload)
+    return _llm_result_from_raw(data), False
 
 
 async def generate_monthly_digest_llm(
     publications: list[PublicationInput],
     topic_queries: list[str],
     structured_delta: MonthlyStructuredDelta,
-) -> DigestLLMResult:
-    user_payload = {
-        "topics": topic_queries,
-        "is_baseline": structured_delta.is_baseline,
-        "structured_delta": structured_delta.model_dump(),
-        "publications": [_pub_dict_monthly(p) for p in publications],
-    }
-    data = await _chat_json_to_dict(SYSTEM_MONTHLY, user_payload)
-    try:
-        return DigestLLMResult.model_validate(data)
-    except ValidationError as e:
-        logger.warning("LLM monthly JSON shape drift, partial fallback: %s", e)
-        raw_fallback = json.dumps(data, ensure_ascii=False) if data else ""
-        return DigestLLMResult(
-            overview_ru=str(data.get("overview_ru") or ""),
-            overview_en=str(data.get("overview_en") or ""),
-            digest_ru=str(data.get("digest_ru") or raw_fallback[:8000]),
-            digest_en=str(data.get("digest_en") or ""),
-            article_cards=[],
+    *,
+    force_two_stage: bool = False,
+) -> tuple[DigestLLMResult, bool]:
+    est = _estimate_monthly_payload_chars(publications, topic_queries, structured_delta)
+    use_two_stage = force_two_stage or est > settings.llm_digest_prompt_budget_chars
+    if use_two_stage:
+        logger.info(
+            "monthly digest LLM: two-stage map-reduce (est_chars=%s budget=%s force=%s)",
+            est,
+            settings.llm_digest_prompt_budget_chars,
+            force_two_stage,
         )
+        return await _generate_monthly_digest_llm_two_stage(
+            publications, topic_queries, structured_delta
+        ), True
+
+    user_payload = _monthly_user_payload(publications, topic_queries, structured_delta)
+    data = await _chat_json_to_dict(SYSTEM_MONTHLY, user_payload)
+    return _llm_result_from_raw(data), False
