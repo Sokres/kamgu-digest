@@ -1,6 +1,7 @@
 # Плановая проверка доступности API (внешний мониторинг из GitHub).
 # Задайте в репозитории: Settings → Secrets and variables → Actions → Variables
 #   API_HEALTH_URL = https://api.ваш-домен.ru/health
+# (Если задали во вкладке Secrets — см. ниже: workflow подхватывает и vars, и secrets.)
 # Уведомления о падении: включите в профиле GitHub уведомления по Actions или смотрите вкладку Actions.
 
 name: Health check
@@ -17,10 +18,11 @@ jobs:
     steps:
       - name: GET /health
         env:
-          URL: ${{ vars.API_HEALTH_URL }}
+          # Variables (рекомендуется) или Secrets — иначе часто путают вкладки и URL пустой.
+          URL: ${{ vars.API_HEALTH_URL || secrets.API_HEALTH_URL }}
         run: |
           if [ -z "${URL:-}" ]; then
-            echo "Задайте переменную репозитория API_HEALTH_URL (например https://api.example.com/health)"
+            echo "Задайте API_HEALTH_URL во вкладке Actions → Variables или Secrets (например https://api.example.com/health)"
             exit 1
           fi
           echo "Checking $URL"
