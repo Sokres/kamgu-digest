@@ -9,6 +9,7 @@ import { DigestPage } from '@/pages/DigestPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { MonthlyPage } from '@/pages/MonthlyPage'
 import { SavedDigestsPage } from '@/pages/SavedDigestsPage'
+import { SharedDigestPage } from '@/pages/SharedDigestPage'
 import { TrendsPage } from '@/pages/TrendsPage'
 
 function AppShell(props: { apiBase: string; onApiBaseChange: (url: string) => void }) {
@@ -28,6 +29,7 @@ export default function App() {
       <AuthProvider apiBase={apiBase}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/shared/digest/:token" element={<SharedDigestPage />} />
           <Route element={<RequireAuth />}>
             <Route element={<AppShell apiBase={apiBase} onApiBaseChange={setApiBase} />}>
               <Route index element={<DigestPage />} />

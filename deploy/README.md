@@ -249,19 +249,18 @@ ls front/dist/assets/ | head -10
 1. Репозиторий на GitHub → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
 2. Создайте секреты (значения с сервера и вашего SSH):
 
-| Secret | Пример значения |
-|--------|-----------------|
-| `DEPLOY_HOST` | `85.239.xx.xx` или домен SSH |
-| `DEPLOY_USER` | `deploy` |
+| Secret           | Пример значения                                                                          |
+| ---------------- | ---------------------------------------------------------------------------------------- |
+| `DEPLOY_HOST`    | `85.239.xx.xx` или домен SSH                                                             |
+| `DEPLOY_USER`    | `deploy`                                                                                 |
 | `DEPLOY_SSH_KEY` | Содержимое **приватного** ключа (файл `~/.ssh/kamgu_vps` целиком, включая `BEGIN`/`END`) |
-| `DEPLOY_PATH` | `/opt/kamgu` — каталог, где на сервере лежит `git clone` |
+| `DEPLOY_PATH`    | `/opt/kamgu` — каталог, где на сервере лежит `git clone`                                 |
 
 3. **Доступ Git с сервера к GitHub (обязательно для `git pull`).** Секреты `DEPLOY_*` в репозитории нужны только тому, чтобы **GitHub Actions подключался к VPS по SSH**. Отдельно на **самом сервере**, в каталоге клона (`DEPLOY_PATH`, чаще всего `/opt/kamgu`), пользователь `DEPLOY_USER` при выполнении [remote-update.sh](remote-update.sh) запускает `git pull --ff-only`. Для **приватного** репозитория (или если без учётных данных `git` не может сходить на GitHub) этот шаг завершится ошибкой, пока не настроена аутентификация **между сервером и GitHub**.
 
    Выберите один из вариантов и проверьте его **до** того, как полагаться на автодеплой.
 
    **Вариант A — HTTPS + Personal Access Token**
-
    - В GitHub: **Settings → Developer settings → Personal access tokens** — создайте токен с правом читать репозиторий: для **classic** достаточно scope `repo` (приватный репозиторий); для **fine-grained** — доступ к нужному репо, разрешение **Contents: Read-only**.
    - На сервере под пользователем деплоя:
      - Убедитесь, что `origin` указывает на HTTPS: `cd /opt/kamgu && git remote -v` (должно быть `https://github.com/...`).
@@ -279,7 +278,6 @@ ls front/dist/assets/ | head -10
      - Проверка: `git fetch` и `git pull --ff-only` в `/opt/kamgu` без запроса пароля.
 
    **Вариант B — SSH: [deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys)** (удобно для сервера: ключ только у этого репозитория)
-
    - На сервере сгенерируйте пару **без пароля** и не переиспользуйте ключ от входа по SSH в систему:
 
      ```bash

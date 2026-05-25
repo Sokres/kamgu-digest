@@ -58,6 +58,7 @@ def test_insert_list_get_delete_roundtrip(monkeypatch: pytest.MonkeyPatch, tmp_p
         got = get_saved_digest_row(conn, uid, sid)
         assert got is not None
         assert json.loads(got[3])["digest_response"]["digest_ru"] == "ru"
+        assert got[4] is None
 
         ok = delete_saved_digest(conn, uid, sid)
         assert ok is True

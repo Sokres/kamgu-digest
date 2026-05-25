@@ -1,6 +1,7 @@
 import asyncio
 import time
 from collections import defaultdict
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from fastapi import Depends, Header, HTTPException, Request
@@ -166,3 +167,31 @@ def verify_monthly_cron_secret(
 
 
 verify_internal_cron_secret = verify_monthly_cron_secret
+
+
+async def llm_client_override_dependency(
+    x_kamgu_llm_key: str | None = Header(default=None, alias="X-Kamgu-Llm-Key"),
+    x_kamgu_llm_base_url: str | None = Header(default=None, alias="X-Kamgu-Llm-Base-Url"),
+    x_kamgu_llm_model: str | None = Header(default=None, alias="X-Kamgu-Llm-Model"),
+    x_kamgu_llm_json_mode: str | None = Header(default=None, alias="X-Kamgu-Llm-Json-Mode"),
+) -> AsyncIterator[None]:
+    """Опциональный BYOK: ключ/URL/модель в заголовках для POST /digests и /digests/periodic."""
+    from digest.llm_override import LLMRequestOverride, push_llm_override, reset_llm_override
+
+    token = None
+    try:
+        if x_kamgu_llm_key and x_kamgu_llm_key.strip():
+            jm: bool | None = None
+            if x_kamgu_llm_json_mode is not None and str(x_kamgu_llm_json_mode).strip():
+                jm = str(x_kamgu_llm_json_mode).strip().lower() in ("1", "true", "yes", "on")
+            ov = LLMRequestOverride(
+                api_key=x_kamgu_llm_key.strip(),
+                base_url=x_kamgu_llm_base_url.strip() if x_kamgu_llm_base_url and x_kamgu_llm_base_url.strip() else None,
+                model=x_kamgu_llm_model.strip() if x_kamgu_llm_model and x_kamgu_llm_model.strip() else None,
+                json_mode=jm,
+            )
+            token = push_llm_override(ov)
+        yield
+    finally:
+        if token is not None:
+            reset_llm_override(token)

@@ -10,6 +10,7 @@ from openai import AsyncOpenAI, RateLimitError
 from pydantic import ValidationError
 
 from digest.config import settings
+from digest.llm_override import resolve_effective_llm_runtime
 from digest.models import DigestLLMResult, MonthlyStructuredDelta, PublicationInput
 
 logger = logging.getLogger(__name__)
@@ -106,7 +107,7 @@ Include one article_card per input snippet, in the same order as given."""
 
 SYSTEM_MONTHLY = """You are a research assistant writing a MONTHLY trend digest for a research lab.
 Rules:
-- Use ONLY facts present in structured_delta and publication fields (title, year, url, doi, abstract, abstract_text_kind, optional concept names). abstract_text_kind indicates metadata_abstract vs pdf_excerpt vs oa_fulltext_excerpt. Do not invent citation counts, ranks, or concept shares.
+- Use ONLY facts present in structured_delta and publication fields (title, year, url, doi, abstract, abstract_text_kind, optional concept names). abstract_text_kind indicates metadata_abstract vs pdf_excerpt vs oa_fulltext_excerpt vs web_snippet (Tavily snippet text, not a full paper). Do not invent citation counts, ranks, or concept shares.
 - If is_baseline is true, state clearly that this is the first stored snapshot and month-to-month comparisons are unavailable; still summarize current papers.
 - In digest_ru and digest_en, use Markdown with these sections in order:
   1) **Disclaimer** (one short paragraph): metrics come from snapshot comparisons of this corpus; citation data lag; "popularity" means citation change / rank within this sample, not definitive global impact.
@@ -126,7 +127,7 @@ Same JSON shape as the standard digest:
 Include one article_card per input publication, in the same order as given."""
 
 SYSTEM_REDUCE_MONTHLY = """You are a research assistant writing a MONTHLY trend digest for a research lab.
-You receive structured_delta (metric comparisons between snapshots) and paper_summaries (short per-paper notes derived from abstracts or excerpts, not full papers).
+You receive structured_delta (metric comparisons between snapshots) and paper_summaries (short per-paper notes derived from abstracts, excerpts, or web_snippet text from Tavily — not full papers).
 Rules:
 - Use ONLY facts present in structured_delta and paper_summaries. Do not invent citation counts, ranks, or concept shares — quantitative claims must come from structured_delta.
 - If is_baseline is true, state clearly that this is the first stored snapshot and month-to-month comparisons are unavailable; still summarize current papers from paper_summaries.
@@ -187,6 +188,8 @@ def _abstract_text_kind(p: PublicationInput) -> str:
         return "pdf_excerpt"
     if s == "oa_fulltext":
         return "oa_fulltext_excerpt"
+    if s == "web_snippet":
+        return "web_snippet"
     return "metadata_abstract"
 
 
@@ -332,54 +335,91 @@ async def _generate_monthly_digest_llm_two_stage(
 
 
 def _make_openai_async_client() -> tuple[AsyncOpenAI, str]:
-    api_key = settings.llm_api_key_resolved()
-    client_kw: dict[str, Any] = {"api_key": api_key}
-    base_url = (settings.openai_base_url or "").strip()
-    if not base_url and (settings.openrouter_api_key or "").strip():
-        base_url = "https://openrouter.ai/api/v1"
-    if base_url:
-        client_kw["base_url"] = base_url
-    log_base = base_url or "https://api.openai.com/v1 (SDK default)"
+    rt = resolve_effective_llm_runtime()
+    client_kw: dict[str, Any] = {"api_key": rt.api_key, "max_retries": 0}
+    if rt.base_url:
+        client_kw["base_url"] = rt.base_url
+    log_base = rt.base_url or "https://api.openai.com/v1 (SDK default)"
     hdrs: dict[str, str] = {}
     ref = (settings.openrouter_http_referer or "").strip()
-    if ref:
+    if ref and rt.base_url and "openrouter" in rt.base_url.lower():
         hdrs["HTTP-Referer"] = ref
     title = (settings.openrouter_app_title or "").strip()
-    if title:
+    if title and rt.base_url and "openrouter" in rt.base_url.lower():
         hdrs["X-OpenRouter-Title"] = title
     if hdrs:
         client_kw["default_headers"] = hdrs
-    client_kw["max_retries"] = 0
     return AsyncOpenAI(**client_kw), log_base.rstrip("/")
+
+
+def _completion_choice_text(completion: Any) -> str | None:
+    """Текст assistant из первого choice или None при пустом/нестандартном ответе API."""
+    choices = getattr(completion, "choices", None)
+    if choices is None or len(choices) == 0:
+        return None
+    msg = getattr(choices[0], "message", None)
+    if msg is None:
+        return None
+    content = getattr(msg, "content", None)
+    if content is None:
+        return None
+    if isinstance(content, str):
+        s = content.strip()
+        return s if s else None
+    if isinstance(content, list):
+        parts: list[str] = []
+        for p in content:
+            if isinstance(p, dict) and p.get("type") == "text":
+                t = p.get("text")
+                if isinstance(t, str) and t.strip():
+                    parts.append(t.strip())
+            elif hasattr(p, "text"):
+                t = getattr(p, "text", None)
+                if isinstance(t, str) and t.strip():
+                    parts.append(t.strip())
+        merged = "\n".join(parts).strip()
+        return merged if merged else None
+    s = str(content).strip()
+    return s if s else None
 
 
 async def _chat_json_to_dict(system: str, user_payload: dict[str, Any]) -> dict[str, Any]:
     t_llm0 = time.perf_counter()
     client, log_base = _make_openai_async_client()
-    key_src = settings.llm_api_key_source_label()
+    rt = resolve_effective_llm_runtime()
     logger.info(
         "LLM → %s/chat/completions model=%s key=%s",
         log_base,
-        settings.openai_model,
-        key_src,
+        rt.model,
+        rt.key_source_label,
     )
     user_text = json.dumps(user_payload, ensure_ascii=False)
     create_kw: dict[str, Any] = {
-        "model": settings.openai_model,
+        "model": rt.model,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user_text},
         ],
         "temperature": 0.35,
     }
-    if settings.openai_response_format_json:
+    if rt.json_format:
         create_kw["response_format"] = {"type": "json_object"}
 
     completion = None
+    choice_text: str | None = None
     for attempt in range(settings.llm_max_retries):
         try:
             completion = await client.chat.completions.create(**create_kw)
-            break
+            choice_text = _completion_choice_text(completion)
+            if choice_text is not None:
+                break
+            logger.warning(
+                "LLM: ответ без текста в choices/message (попытка %s/%s)",
+                attempt + 1,
+                settings.llm_max_retries,
+            )
+            if attempt < settings.llm_max_retries - 1:
+                await asyncio.sleep(_llm_backoff_seconds(attempt))
         except RateLimitError as e:
             if attempt >= settings.llm_max_retries - 1:
                 logger.error(
@@ -402,6 +442,11 @@ async def _chat_json_to_dict(system: str, user_payload: dict[str, Any]) -> dict[
             "LLM: chat.completions.create did not return after "
             f"{settings.llm_max_retries} attempt(s) (unexpected without exception)"
         )
+    if choice_text is None:
+        raise RuntimeError(
+            "LLM: пустой ответ модели (нет choices или message.content). "
+            "Часто бывает у бесплатных маршрутов OpenRouter — смените модель или отключите JSON-режим."
+        )
     usage = getattr(completion, "usage", None)
     if usage is not None:
         logger.info(
@@ -410,7 +455,7 @@ async def _chat_json_to_dict(system: str, user_payload: dict[str, Any]) -> dict[
             getattr(usage, "completion_tokens", None),
             getattr(usage, "total_tokens", None),
         )
-    raw = _strip_json_fence(completion.choices[0].message.content or "{}")
+    raw = _strip_json_fence(choice_text)
     logger.info(
         "LLM chat round-trip %.2fs (включая ретраи при 429)",
         time.perf_counter() - t_llm0,

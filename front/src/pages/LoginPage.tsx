@@ -17,7 +17,7 @@ type LocationState = { from?: { pathname: string } }
 export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { authEnabled, registrationEnabled, loading, isAuthenticated, loginWithToken, refreshStatus } = useAuth()
+  const { authEnabled, registrationEnabled, loading, isAuthenticated, loginWithTokens } = useAuth()
   const from = (location.state as LocationState | null)?.from?.pathname ?? '/'
 
   useEffect(() => {
@@ -47,9 +47,8 @@ export function LoginPage() {
     setBusy(true)
     try {
       const res = await authLogin(apiBase, { username: username.trim(), password })
-      loginWithToken(res.access_token)
+      loginWithTokens(res.access_token, res.refresh_token, { userId: res.user_id, username: res.username })
       applyThemeFromPreference()
-      await refreshStatus()
       navigate(from, { replace: true })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err))
@@ -64,9 +63,8 @@ export function LoginPage() {
     setBusy(true)
     try {
       const res = await authRegister(apiBase, { username: username.trim(), password })
-      loginWithToken(res.access_token)
+      loginWithTokens(res.access_token, res.refresh_token, { userId: res.user_id, username: res.username })
       applyThemeFromPreference()
-      await refreshStatus()
       navigate(from, { replace: true })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err))
@@ -82,14 +80,12 @@ export function LoginPage() {
           <CardHeader>
             <CardTitle>Вход недоступен</CardTitle>
             <CardDescription>
-              На сервере <span className="font-mono text-xs">{apiBase}</span> не включена авторизация (
-              <code className="text-xs">AUTH_ENABLED</code>).
+              На сервере <span className="font-mono text-xs">{apiBase}</span> вход в приложение отключён.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Задайте в <code className="text-xs">.env</code> бэкенда:{' '}
-              <code className="text-xs">AUTH_ENABLED=true</code> и <code className="text-xs">AUTH_JWT_SECRET</code>, затем перезапустите API.
+              Включение входа и секреты для сессий задаёт администратор в конфигурации API, затем сервис нужно перезапустить.
             </p>
             <Button asChild className="w-full">
               <Link to="/">На главную</Link>

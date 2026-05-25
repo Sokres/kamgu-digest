@@ -12,7 +12,7 @@ services:
     volumes:
       - kamgu_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      test: ["CMD-SHELL", 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -22,7 +22,12 @@ services:
     build:
       context: ./backend
     env_file:
+      # Корень репозитория: SNAPSHOT_DATABASE_URL, CORS и т.д. (см. deploy/.env.production.example).
       - path: .env
+        required: false
+      # Локально ключи часто лежат в backend/.env — подключаем, чтобы прод не терял OPENROUTER_* при отдельном корневом .env.
+      # Порядок: при одинаковых ключах побеждает последний файл.
+      - path: backend/.env
         required: false
     environment:
       # Задайте в корневом .env (пароль с символами @ : / ? должен быть %-кодирован).

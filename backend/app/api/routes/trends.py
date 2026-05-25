@@ -5,9 +5,18 @@ import psycopg
 from fastapi import APIRouter, Header, HTTPException, Query
 
 from digest.config import settings
-from digest.models import TrendProfileLabelUpdate, TrendProfileSummary, TrendSeriesPoint, TrendSeriesResponse
+from digest.models import (
+    DigestProfileCreate,
+    DigestProfileCreated,
+    TrendProfileLabelUpdate,
+    TrendProfileSummary,
+    TrendSeriesPoint,
+    TrendSeriesResponse,
+)
 from digest.snapshot_store import (
+    digest_profile_exists_for_user,
     init_snapshot_schema,
+    insert_digest_profile,
     list_period_metrics_for_profile,
     list_profile_summaries,
     upsert_profile_label,
@@ -28,6 +37,30 @@ _DB_UNAVAILABLE = (
 def _snapshot_http_exc(exc: Exception) -> HTTPException:
     logger.warning("snapshot DB error: %s", exc)
     return HTTPException(status_code=503, detail=_DB_UNAVAILABLE)
+
+
+@router.post("/trends/profiles", response_model=DigestProfileCreated)
+def create_trends_profile(
+    body: DigestProfileCreate,
+    authorization: str | None = Header(None),
+    x_internal_key: str | None = Header(None, alias="X-Internal-Key"),
+    x_acting_user_id: str | None = Header(None, alias="X-Acting-User-Id"),
+) -> DigestProfileCreated:
+    uid = resolve_periodic_user_id(authorization, x_internal_key, x_acting_user_id)
+    try:
+        with snapshot_connection(settings.snapshot_database_url) as conn:
+            init_snapshot_schema(conn)
+            pid, created_at = insert_digest_profile(
+                conn, uid, body.display_name, body.note or None
+            )
+    except (psycopg.Error, sqlite3.Error, OSError, ValueError) as e:
+        raise _snapshot_http_exc(e) from e
+    return DigestProfileCreated(
+        profile_id=pid,
+        display_name=body.display_name.strip(),
+        note=(body.note or "").strip(),
+        created_at=created_at,
+    )
 
 
 @router.get("/trends/profiles", response_model=list[TrendProfileSummary])
@@ -61,6 +94,11 @@ def get_trends_series(
     try:
         with snapshot_connection(settings.snapshot_database_url) as conn:
             init_snapshot_schema(conn)
+            if not digest_profile_exists_for_user(conn, tenant, pid):
+                raise HTTPException(
+                    status_code=404,
+                    detail="Профиль не найден или нет доступа.",
+                )
             points_raw = list_period_metrics_for_profile(conn, tenant, pid)
     except (psycopg.Error, sqlite3.Error, OSError, ValueError) as e:
         raise _snapshot_http_exc(e) from e
@@ -83,7 +121,9 @@ def put_trends_profile_label(
     try:
         with snapshot_connection(settings.snapshot_database_url) as conn:
             init_snapshot_schema(conn)
-            upsert_profile_label(conn, uid, pid, body.display_name, body.note or None)
+            n = upsert_profile_label(conn, uid, pid, body.display_name, body.note or None)
     except (psycopg.Error, sqlite3.Error, OSError, ValueError) as e:
         raise _snapshot_http_exc(e) from e
+    if n == 0:
+        raise HTTPException(status_code=404, detail="Профиль не найден или принадлежит другому пользователю.")
     return {"status": "ok", "profile_id": pid}

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Header
 from digest.models import DigestRequest, DigestResponse, MonthlyDigestRequest, MonthlyDigestResponse
 from app.api.deps import (
     TokenUser,
+    llm_client_override_dependency,
     require_user_when_auth_enabled,
     resolve_periodic_user_id,
     verify_digest_rate_limit,
@@ -16,6 +17,7 @@ router = APIRouter(tags=["digests"])
 async def create_digest(
     body: DigestRequest,
     _: None = Depends(verify_digest_rate_limit),
+    __: None = Depends(llm_client_override_dependency),
     auth_user: TokenUser | None = Depends(require_user_when_auth_enabled),
 ) -> DigestResponse:
     doc_uid = auth_user.id if auth_user else None
@@ -43,6 +45,7 @@ async def create_digest(
 )
 async def create_periodic_digest(
     body: MonthlyDigestRequest,
+    _: None = Depends(llm_client_override_dependency),
     authorization: str | None = Header(None),
     x_internal_key: str | None = Header(None, alias="X-Internal-Key"),
     x_acting_user_id: str | None = Header(None, alias="X-Acting-User-Id"),

@@ -28,6 +28,7 @@ from pipeline.llm import generate_monthly_digest_llm
 from pipeline.monthly_diff import compute_monthly_structured_delta
 from pipeline.score import rank_for_llm
 from pipeline.ingest_sources import ingest_peer_reviewed_sources
+from pipeline.run_web import FIXED_DISCLAIMER_EN, FIXED_DISCLAIMER_RU, ingest_web_publications
 from sources.oa_fulltext import enrich_publications_with_oa_fulltext
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,9 @@ async def run_monthly_digest(req: MonthlyDigestRequest, user_id: str) -> Monthly
     period = _utc_period(req.force_period)
     digest_req = DigestRequest(
         topic_queries=req.topic_queries,
+        digest_mode=req.digest_mode,
+        web_scholarly_sources_only=req.web_scholarly_sources_only,
+        web_search_additional_terms=req.web_search_additional_terms,
         max_candidates=req.max_candidates,
         top_n_for_llm=req.top_n_for_llm,
         from_year=req.from_year,
@@ -98,34 +102,47 @@ async def run_monthly_digest(req: MonthlyDigestRequest, user_id: str) -> Monthly
 
     meta_warnings: list[str] = []
 
+    oa_count = 0
+    ss_count = 0
+    core_count = 0
+    cr_dois = 0
+    snip_n = 0
+    scholarly_filter = False
+    raw: list[PublicationInput]
+
     timeout = httpx.Timeout(settings.http_timeout_seconds)
     async with httpx.AsyncClient(
         timeout=timeout,
         headers=settings.http_client_headers(),
     ) as client:
-        ing = await ingest_peer_reviewed_sources(
-            client,
-            topic_queries=digest_req.topic_queries,
-            max_candidates=digest_req.max_candidates,
-            from_year=digest_req.from_year,
-            to_year=digest_req.to_year,
-            peer_reviewed_only=digest_req.peer_reviewed_only,
-            openalex_concept_id=digest_req.openalex_concept_id,
-            openalex_source_ids=digest_req.openalex_source_ids,
-        )
-        meta_warnings.extend(ing.warnings)
-        oa_count = ing.n_openalex
-        ss_count = ing.n_semantic_scholar
-        core_count = ing.n_core
-        cr_dois = ing.crossref_enriched_dois
-
-    raw: list[PublicationInput] = list(ing.publications)
+        if req.digest_mode == "web_snippets":
+            if req.fetch_oa_fulltext:
+                meta_warnings.append("fetch_oa_ignored_web_mode")
+            raw, mw, snip_n, scholarly_filter = await ingest_web_publications(client, digest_req)
+            meta_warnings.extend(mw)
+        else:
+            ing = await ingest_peer_reviewed_sources(
+                client,
+                topic_queries=digest_req.topic_queries,
+                max_candidates=digest_req.max_candidates,
+                from_year=digest_req.from_year,
+                to_year=digest_req.to_year,
+                peer_reviewed_only=digest_req.peer_reviewed_only,
+                openalex_concept_id=digest_req.openalex_concept_id,
+                openalex_source_ids=digest_req.openalex_source_ids,
+            )
+            meta_warnings.extend(ing.warnings)
+            oa_count = ing.n_openalex
+            ss_count = ing.n_semantic_scholar
+            core_count = ing.n_core
+            cr_dois = ing.crossref_enriched_dois
+            raw = list(ing.publications)
     exclude = set(digest_req.exclude_dois)
     deduped = dedupe_publications(raw, exclude)
     ranked = rank_for_llm(deduped, digest_req.topic_queries, digest_req.top_n_for_llm)
 
     oa_n = 0
-    if req.fetch_oa_fulltext and ranked:
+    if req.digest_mode != "web_snippets" and req.fetch_oa_fulltext and ranked:
         oa_timeout = httpx.Timeout(max(float(settings.http_timeout_seconds), 120.0))
         async with httpx.AsyncClient(
             timeout=oa_timeout,
@@ -147,6 +164,11 @@ async def run_monthly_digest(req: MonthlyDigestRequest, user_id: str) -> Monthly
     )
 
     if not ranked:
+        if req.digest_mode == "web_snippets":
+            raise ValueError(
+                "Веб-дайджест (периодический): нет сниппетов после отбора — проверьте запрос, "
+                "TAVILY_API_KEY и при необходимости настройки доменов Tavily."
+            )
         raise ValueError(
             "Не найдено публикаций для ежемесячного дайджеста: проверьте запрос и годы, "
             "либо источники (OpenAlex/Semantic Scholar)."
@@ -174,6 +196,11 @@ async def run_monthly_digest(req: MonthlyDigestRequest, user_id: str) -> Monthly
         digest_ru = f"**Обзор:** {llm.overview_ru}\n\n{digest_ru}"
     if llm.overview_en and digest_en and llm.overview_en not in digest_en:
         digest_en = f"**Overview:** {llm.overview_en}\n\n{digest_en}"
+    if req.digest_mode == "web_snippets":
+        if FIXED_DISCLAIMER_RU.strip() not in digest_ru:
+            digest_ru = FIXED_DISCLAIMER_RU + digest_ru
+        if FIXED_DISCLAIMER_EN.strip() not in digest_en:
+            digest_en = FIXED_DISCLAIMER_EN + digest_en
 
     payload = {
         "version": SNAPSHOT_PAYLOAD_VERSION,
@@ -194,11 +221,13 @@ async def run_monthly_digest(req: MonthlyDigestRequest, user_id: str) -> Monthly
 
     elapsed = time.perf_counter() - t0
     meta = MonthlyDigestMeta(
-        digest_mode="peer_reviewed",
+        digest_mode=req.digest_mode,
         candidates_openalex=oa_count,
         candidates_semantic_scholar=ss_count,
         candidates_core=core_count,
         crossref_enriched_dois=cr_dois,
+        web_snippets_used=snip_n,
+        web_scholarly_domain_filter=scholarly_filter,
         after_dedupe=len(deduped),
         used_for_llm=len(ranked),
         elapsed_seconds=round(elapsed, 3),

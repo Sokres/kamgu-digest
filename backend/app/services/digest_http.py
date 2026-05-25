@@ -1,10 +1,18 @@
 import logging
+import sqlite3
 
+import psycopg
 from fastapi import HTTPException
 from openai import AuthenticationError, RateLimitError
 
+from digest.llm_override import effective_llm_api_key
 from digest.config import settings
 from digest.models import DigestRequest, DigestResponse, MonthlyDigestRequest, MonthlyDigestResponse
+from digest.snapshot_store import (
+    digest_profile_exists_for_user,
+    init_snapshot_schema,
+    snapshot_connection,
+)
 from pipeline.run import run_digest
 from pipeline.run_monthly import run_monthly_digest
 
@@ -12,10 +20,10 @@ logger = logging.getLogger(__name__)
 
 
 async def execute_digest(body: DigestRequest, document_user_id: str | None = None) -> DigestResponse:
-    if not settings.llm_api_key_resolved():
+    if not effective_llm_api_key():
         raise HTTPException(
             status_code=503,
-            detail="Укажите OPENAI_API_KEY или OPENROUTER_API_KEY в .env",
+            detail="Укажите ключ LLM в .env на сервере или передайте свой ключ заголовком X-Kamgu-Llm-Key (см. документацию API).",
         )
     try:
         return await run_digest(body, document_user_id=document_user_id)
@@ -50,11 +58,32 @@ async def execute_digest(body: DigestRequest, document_user_id: str | None = Non
 
 
 async def execute_monthly_digest(body: MonthlyDigestRequest, user_id: str) -> MonthlyDigestResponse:
-    if not settings.llm_api_key_resolved():
+    if not effective_llm_api_key():
         raise HTTPException(
             status_code=503,
-            detail="Укажите OPENAI_API_KEY или OPENROUTER_API_KEY в .env",
+            detail="Укажите ключ LLM в .env на сервере или передайте свой ключ заголовком X-Kamgu-Llm-Key.",
         )
+    pid = body.profile_id.strip()
+    if not pid:
+        raise HTTPException(status_code=400, detail="profile_id пустой.")
+    try:
+        with snapshot_connection(settings.snapshot_database_url) as conn:
+            init_snapshot_schema(conn)
+            if not digest_profile_exists_for_user(conn, user_id, pid):
+                raise HTTPException(
+                    status_code=404,
+                    detail=(
+                        "Профиль не найден. Создайте направление через POST /trends/profiles "
+                        "или выберите существующий профиль в интерфейсе."
+                    ),
+                )
+    except HTTPException:
+        raise
+    except (OSError, ValueError, sqlite3.Error, psycopg.Error) as e:
+        raise HTTPException(
+            status_code=503,
+            detail="База снимков недоступна. Проверьте SNAPSHOT_DATABASE_URL на сервере.",
+        ) from e
     try:
         return await run_monthly_digest(body, user_id=user_id)
     except ValueError as e:

@@ -1,3 +1,4 @@
+import { StructuredDeltaCharts } from '@/components/StructuredDeltaCharts'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -111,6 +112,8 @@ export function StructuredDeltaView({ delta }: { delta: MonthlyStructuredDelta }
           <Badge variant="default">Базовая линия (без сравнения)</Badge>
         ) : null}
       </div>
+
+      <StructuredDeltaCharts delta={delta} />
 
       <CitationRows rows={delta.top_by_citation_gain ?? []} title="Рост цитирования" />
       <CitationRows rows={delta.entered_top_k ?? []} title="Вошли в топ-K" />

@@ -107,6 +107,28 @@ def test_post_digests_periodic_alias_mocked(client: TestClient) -> None:
     assert r_periodic.json()["structured_delta"]["profile_id"] == "p"
 
 
+def test_post_periodic_rejects_unknown_profile(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.services.digest_http.effective_llm_api_key", lambda: True)
+    r = client.post(
+        "/digests/periodic",
+        json={
+            "profile_id": "123e4567-e89b-12d3-a456-426614174000",
+            "topic_queries": ["x"],
+        },
+    )
+    assert r.status_code == 404
+
+
+def test_post_trends_profiles_create(client: TestClient) -> None:
+    r = client.post("/trends/profiles", json={"display_name": "Лаборатория тест", "note": "n1"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["display_name"] == "Лаборатория тест"
+    assert data["note"] == "n1"
+    assert len(data["profile_id"]) == 36
+    assert "created_at" in data
+
+
 def test_get_digest_schedules_empty(client: TestClient) -> None:
     r = client.get("/digests/schedules")
     assert r.status_code == 200
@@ -117,8 +139,11 @@ def test_get_digest_schedules_empty(client: TestClient) -> None:
 
 
 def test_post_digest_schedule_roundtrip(client: TestClient) -> None:
+    pr = client.post("/trends/profiles", json={"display_name": "Расписание тест", "note": ""})
+    assert pr.status_code == 200
+    profile_id = pr.json()["profile_id"]
     body = {
-        "profile_id": "p1",
+        "profile_id": profile_id,
         "cron_utc": "0 6 1 * *",
         "enabled": True,
         "topic_queries": ["solar"],

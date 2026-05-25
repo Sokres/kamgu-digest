@@ -90,6 +90,7 @@ export interface SavedDigestListItem {
   digest_mode?: DigestMode
   used_for_llm?: number | null
   elapsed_seconds?: number | null
+  public_share_active?: boolean
 }
 
 export interface SavedDigestOut {
@@ -98,11 +99,17 @@ export interface SavedDigestOut {
   created_at: string
   digest_response: DigestResponse
   request_snapshot?: DigestRequest | null
+  public_share_active?: boolean
 }
 
 export interface SavedDigestCreated {
   id: string
   created_at: string
+}
+
+export interface SavedDigestShareResponse {
+  token: string
+  public_path: string
 }
 
 export interface SavedDigestCreateBody {
@@ -120,6 +127,9 @@ export interface PdfDocumentUploadResponse {
 export interface MonthlyDigestRequest {
   profile_id: string
   topic_queries: string[]
+  digest_mode?: DigestMode
+  web_scholarly_sources_only?: boolean
+  web_search_additional_terms?: string[]
   max_candidates?: number
   top_n_for_llm?: number
   trend_top_k?: number
@@ -180,12 +190,26 @@ export interface TrendProfileSummary {
   user_id?: string
   profile_id: string
   snapshot_count: number
-  last_period: string
-  last_created_at: string
+  /** Нет снимков — null */
+  last_period?: string | null
+  last_created_at?: string | null
   topic_queries: string[]
   work_count_last: number
   display_name?: string | null
   note?: string
+}
+
+/** POST /trends/profiles */
+export interface DigestProfileCreateBody {
+  display_name: string
+  note?: string
+}
+
+export interface DigestProfileCreated {
+  profile_id: string
+  display_name: string
+  note: string
+  created_at: string
 }
 
 /** GET /trends/profiles/:id/series */
@@ -217,6 +241,11 @@ export interface PeriodicDigestScheduleOut {
   cron_utc: string
   enabled: boolean
   topic_queries: string[]
+  digest_mode?: DigestMode
+  web_scholarly_sources_only?: boolean
+  web_search_additional_terms?: string[]
+  fetch_oa_fulltext?: boolean
+  deep_digest?: boolean
   max_candidates: number
   top_n_for_llm: number
   trend_top_k: number
@@ -230,6 +259,16 @@ export interface PeriodicDigestScheduleOut {
   last_error?: string | null
 }
 
+/** GET /digests/schedules/:id/runs */
+export interface DigestScheduleRunOut {
+  id: string
+  schedule_id: string
+  user_id: string
+  finished_at: string
+  status: string
+  message?: string | null
+}
+
 export interface DigestSchedulesListResponse {
   items: PeriodicDigestScheduleOut[]
   scheduler_enabled_in_config: boolean
@@ -241,6 +280,11 @@ export interface PeriodicDigestScheduleCreate {
   cron_utc: string
   enabled?: boolean
   topic_queries: string[]
+  digest_mode?: DigestMode
+  web_scholarly_sources_only?: boolean
+  web_search_additional_terms?: string[]
+  fetch_oa_fulltext?: boolean
+  deep_digest?: boolean
   max_candidates?: number
   top_n_for_llm?: number
   trend_top_k?: number
@@ -253,6 +297,11 @@ export interface PeriodicDigestScheduleUpdate {
   cron_utc?: string
   enabled?: boolean
   topic_queries?: string[]
+  digest_mode?: DigestMode
+  web_scholarly_sources_only?: boolean
+  web_search_additional_terms?: string[]
+  fetch_oa_fulltext?: boolean
+  deep_digest?: boolean
   max_candidates?: number
   top_n_for_llm?: number
   trend_top_k?: number
@@ -269,6 +318,12 @@ export interface AuthStatusResponse {
 export interface AuthTokenResponse {
   access_token: string
   token_type: string
+  refresh_token: string
+  user_id: string
+  username: string
+}
+
+export interface AuthMeResponse {
   user_id: string
   username: string
 }

@@ -53,15 +53,9 @@ function parseSourceIds(text: string): string[] {
     .filter(Boolean)
 }
 
-const TOPIC_TEMPLATES: { label: string; topics: string[] }[] = [
-  { label: 'Квантовые вычисления', topics: ['quantum computing', 'квантовые вычисления'] },
-  { label: 'ВИЭ и энергетика', topics: ['renewable energy', 'энергетика ВИЭ'] },
-  { label: 'LLM и NLP', topics: ['large language models', 'обработка естественного языка'] },
-]
-
 export function DigestPage() {
   const { apiBase } = useOutletContext<{ apiBase: string }>()
-  const [topics, setTopics] = useState<string[]>(['quantum computing', 'квантовые вычисления'])
+  const [topics, setTopics] = useState<string[]>([''])
   const [digestMode, setDigestMode] = useState<DigestMode>('peer_reviewed')
   const [peerReviewedOnly, setPeerReviewedOnly] = useState(true)
   const [openalexConceptId, setOpenalexConceptId] = useState('')
@@ -304,8 +298,8 @@ export function DigestPage() {
               'Задайте одну или несколько поисковых строк (удобно дублировать на EN/RU). Выберите рецензируемый корпус или веб-обзор по сниппетам.',
           },
           {
-            title: 'Пресеты и примеры',
-            detail: 'Сохраните частые наборы параметров в пресетах или подставьте готовый пример тем одной кнопкой.',
+            title: 'Пресеты',
+            detail: 'Сохраните частые наборы параметров в пресетах в браузере.',
           },
           {
             title: 'Запуск и результат',
@@ -328,22 +322,6 @@ export function DigestPage() {
           <form onSubmit={handleSubmit} className="space-y-6">
             <DigestPresetsBar onApply={applyPreset} snapshot={presetSnapshot} />
 
-            <div className="flex flex-wrap gap-2">
-              <span className="w-full text-xs font-medium text-muted-foreground">Примеры тем (подставить в строки)</span>
-              {TOPIC_TEMPLATES.map((t) => (
-                <Button
-                  key={t.label}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                  onClick={() => setTopics([...t.topics])}
-                >
-                  {t.label}
-                </Button>
-              ))}
-            </div>
-
             <div className="space-y-2">
               <Label htmlFor="digest-mode">Режим</Label>
               <Select
@@ -365,9 +343,9 @@ export function DigestPage() {
                 <Alert className="border-primary/25 bg-primary/5">
                   <AlertTitle>Веб-обзор</AlertTitle>
                   <AlertDescription>
-                    Это не систематический обзор литературы и не каталог рецензируемых статей. На сервере нужен{' '}
-                    <code className="rounded bg-muted px-1 py-0.5 text-xs">TAVILY_API_KEY</code>. По умолчанию поиск
-                    ограничен научными доменами (PubMed, arXiv, Nature, …), а не всем интернетом.
+                    Это не систематический обзор литературы и не каталог рецензируемых статей. На стороне сервера
+                    должен быть настроен доступ к поиску Tavily (ключ задаёт администратор). По умолчанию поиск
+                    ограничен научными доменами, а не всем интернетом.
                   </AlertDescription>
                 </Alert>
                 <div className="space-y-4 rounded-lg border border-border/80 bg-muted/15 p-4">
@@ -443,7 +421,7 @@ export function DigestPage() {
                     <Label htmlFor="peer-only" className="cursor-pointer text-sm font-medium leading-snug">
                       Только журнальные статьи
                     </Label>
-                    <p className="text-xs text-muted-foreground">OpenAlex: type:article</p>
+                    <p className="text-xs text-muted-foreground">Только записи типа «статья» в индексе</p>
                   </div>
                 </div>
                 <div className="space-y-4 rounded-lg border border-border/80 bg-muted/15 p-4">
@@ -460,10 +438,8 @@ export function DigestPage() {
                       </Label>
                       <p className="text-xs text-muted-foreground leading-relaxed">
                         Для открытых статей сервер запрашивает ссылку на PDF через Unpaywall, скачивает файл, извлекает
-                        текст и подмешивает его в анализ (кэш на диске). На сервере должен быть указан email
-                        для Unpaywall: переменные окружения{' '}
-                        <code className="rounded bg-muted px-1 py-0.5 text-[11px]">OPENALEX_MAILTO</code> или{' '}
-                        <code className="rounded bg-muted px-1 py-0.5 text-[11px]">UNPAYWALL_EMAIL</code>.
+                        текст и учитывает его в анализе (с кэшем на диске). Администратору нужно указать контактный
+                        email для запросов к Unpaywall в настройках сервиса.
                       </p>
                     </div>
                   </div>

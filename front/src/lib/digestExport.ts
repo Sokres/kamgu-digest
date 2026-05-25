@@ -19,6 +19,91 @@ export function publicationsToMarkdown(rows: PublicationInput[]): string {
   return rows.map((p, i) => publicationLine(p, i)).join('\n\n') + '\n'
 }
 
+function bibtexBraceEscape(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/\{/g, '\\{').replace(/\}/g, '\\}')
+}
+
+function risLine(tag: string, value: string): string {
+  const t = value.replace(/\r?\n/g, ' ').trim()
+  if (!t) return ''
+  const prefix = `${tag}  - `
+  const max = 2000
+  const chunk = t.length > max ? `${t.slice(0, max)}…` : t
+  return `${prefix}${chunk}`
+}
+
+function citeKeyBase(p: PublicationInput, i: number): string {
+  const y = p.year != null ? String(Math.trunc(p.year)) : 'nd'
+  const slug = p.title
+    .normalize('NFKD')
+    .replace(/[^\p{L}\p{N}\s-]+/gu, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 4)
+    .join('')
+    .toLowerCase()
+    .slice(0, 28)
+  const base = (slug || 'item') + y + i
+  return base.replace(/[^a-z0-9_]/gi, '_')
+}
+
+export function publicationsToBibtex(rows: PublicationInput[]): string {
+  if (!rows.length) return ''
+  const blocks: string[] = []
+  for (let i = 0; i < rows.length; i++) {
+    const p = rows[i]
+    const key = citeKeyBase(p, i)
+    const title = bibtexBraceEscape(p.title || 'Untitled')
+    const doi = (p.doi || '').trim()
+    const url = (p.url || '').trim()
+    const year = p.year != null ? String(Math.trunc(p.year)) : ''
+    const journal = bibtexBraceEscape((p.source || '').trim())
+    if (doi) {
+      const lines = [
+        `@article{${key},`,
+        `  title = {${title}},`,
+        year ? `  year = {${year}},` : '',
+        `  doi = {${bibtexBraceEscape(doi)}},`,
+        journal ? `  journal = {${journal}},` : '',
+        url ? `  url = {${bibtexBraceEscape(url)}},` : '',
+        '}',
+      ]
+      blocks.push(lines.filter(Boolean).join('\n'))
+    } else {
+      const lines = [
+        `@misc{${key},`,
+        `  title = {${title}},`,
+        year ? `  year = {${year}},` : '',
+        journal ? `  howpublished = {${journal}},` : '',
+        url ? `  url = {${bibtexBraceEscape(url)}},` : '',
+        '}',
+      ]
+      blocks.push(lines.filter(Boolean).join('\n'))
+    }
+  }
+  return blocks.join('\n\n')
+}
+
+export function publicationsToRis(rows: PublicationInput[]): string {
+  if (!rows.length) return ''
+  const parts: string[] = []
+  for (const p of rows) {
+    const block: string[] = ['TY  - JOUR']
+    const t = risLine('TI', p.title)
+    if (t) block.push(t)
+    if (p.year != null) block.push(`PY  - ${Math.trunc(p.year)}`)
+    const doi = (p.doi || '').trim()
+    if (doi) block.push(risLine('DO', doi))
+    const url = (p.url || '').trim()
+    if (url) block.push(risLine('UR', url))
+    const src = (p.source || '').trim()
+    if (src) block.push(risLine('JO', src))
+    block.push('ER  - ')
+    parts.push(block.filter(Boolean).join('\n'))
+  }
+  return parts.join('\n\n')
+}
+
 export function digestBodyToMarkdown(data: DigestResponse | MonthlyDigestResponse): string {
   const blocks: string[] = []
   blocks.push('## Дайджест (RU)\n')

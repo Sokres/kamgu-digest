@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,19 @@ from digest.config import settings
 logger = logging.getLogger(__name__)
 
 CREATE_SQL_SQLITE = """
+CREATE TABLE IF NOT EXISTS digest_profiles (
+    profile_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    note TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_digest_profiles_user ON digest_profiles(user_id);
+CREATE TABLE IF NOT EXISTS app_schema_meta (
+    k TEXT PRIMARY KEY,
+    v TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS digest_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
@@ -27,14 +41,6 @@ CREATE TABLE IF NOT EXISTS digest_snapshots (
     created_at TEXT NOT NULL,
     payload_json TEXT NOT NULL,
     UNIQUE(user_id, profile_id, period)
-);
-CREATE TABLE IF NOT EXISTS trend_profile_labels (
-    user_id TEXT NOT NULL,
-    profile_id TEXT NOT NULL,
-    display_name TEXT NOT NULL,
-    note TEXT,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY (user_id, profile_id)
 );
 CREATE TABLE IF NOT EXISTS periodic_digest_schedules (
     id TEXT PRIMARY KEY,
@@ -64,6 +70,23 @@ CREATE TABLE IF NOT EXISTS saved_digests (
     payload_json TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_saved_digests_user_created ON saved_digests(user_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS auth_refresh_sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auth_refresh_sessions_user ON auth_refresh_sessions(user_id);
+CREATE TABLE IF NOT EXISTS digest_schedule_runs (
+    id TEXT PRIMARY KEY,
+    schedule_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    finished_at TEXT NOT NULL,
+    status TEXT NOT NULL,
+    message TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_digest_schedule_runs_sched_fin ON digest_schedule_runs(schedule_id, finished_at DESC);
 """
 
 CREATE_SQL_POSTGRES_DIGEST = """
@@ -78,14 +101,19 @@ CREATE TABLE IF NOT EXISTS digest_snapshots (
 );
 """
 
-CREATE_SQL_POSTGRES_LABELS = """
-CREATE TABLE IF NOT EXISTS trend_profile_labels (
+CREATE_SQL_POSTGRES_DIGEST_PROFILES = """
+CREATE TABLE IF NOT EXISTS digest_profiles (
+    profile_id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
-    profile_id TEXT NOT NULL,
     display_name TEXT NOT NULL,
     note TEXT,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY (user_id, profile_id)
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_digest_profiles_user ON digest_profiles(user_id);
+CREATE TABLE IF NOT EXISTS app_schema_meta (
+    k TEXT PRIMARY KEY,
+    v TEXT NOT NULL
 );
 """
 
@@ -115,6 +143,17 @@ CREATE TABLE IF NOT EXISTS auth_users (
 );
 """
 
+CREATE_SQL_POSTGRES_AUTH_REFRESH = """
+CREATE TABLE IF NOT EXISTS auth_refresh_sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auth_refresh_sessions_user ON auth_refresh_sessions(user_id);
+"""
+
 CREATE_SQL_POSTGRES_SAVED_DIGESTS = """
 CREATE TABLE IF NOT EXISTS saved_digests (
     id TEXT PRIMARY KEY,
@@ -126,7 +165,85 @@ CREATE TABLE IF NOT EXISTS saved_digests (
 CREATE INDEX IF NOT EXISTS idx_saved_digests_user_created ON saved_digests(user_id, created_at DESC);
 """
 
+CREATE_SQL_POSTGRES_SCHEDULE_RUNS_TABLE = """
+CREATE TABLE IF NOT EXISTS digest_schedule_runs (
+    id TEXT PRIMARY KEY,
+    schedule_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    finished_at TEXT NOT NULL,
+    status TEXT NOT NULL,
+    message TEXT
+);
+"""
+
+CREATE_SQL_POSTGRES_SCHEDULE_RUNS_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_digest_schedule_runs_sched_fin ON digest_schedule_runs(schedule_id, finished_at DESC);
+"""
+
 Backend = Literal["sqlite", "postgres"]
+
+PROFILE_UUID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "kamgu.edu.digest_profiles")
+PROFILES_UUID_META_KEY = "profiles_uuid_v1"
+
+
+def stable_legacy_profile_uuid(user_id: str, legacy_profile_id: str) -> str:
+    """Детерминированный UUID для старых не-UUID profile_id (идемпотентная миграция)."""
+    return str(uuid.uuid5(PROFILE_UUID_NAMESPACE, f"{user_id}\x1f{legacy_profile_id}"))
+
+
+def _looks_like_uuid(s: str) -> bool:
+    try:
+        uuid.UUID(s)
+        return True
+    except ValueError:
+        return False
+
+
+def _sqlite_table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    r = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (name,),
+    ).fetchone()
+    return r is not None
+
+
+def _postgres_table_exists(conn: PgConnection, name: str) -> bool:
+    r = conn.execute(
+        "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
+        (name,),
+    ).fetchone()
+    return r is not None
+
+
+def _profiles_uuid_migration_done(conn: sqlite3.Connection | PgConnection) -> bool:
+    backend = _backend_of_conn(conn)
+    ph = _ph(backend)
+    try:
+        row = conn.execute(
+            f"SELECT v FROM app_schema_meta WHERE k = {ph}",
+            (PROFILES_UUID_META_KEY,),
+        ).fetchone()
+    except Exception:
+        return False
+    return row is not None and str(row[0]) == "1"
+
+
+def _mark_profiles_uuid_migration_done(conn: sqlite3.Connection | PgConnection) -> None:
+    backend = _backend_of_conn(conn)
+    ph = _ph(backend)
+    if backend == "sqlite":
+        conn.execute(
+            f"INSERT OR REPLACE INTO app_schema_meta (k, v) VALUES ({ph}, {ph})",
+            (PROFILES_UUID_META_KEY, "1"),
+        )
+    else:
+        conn.execute(
+            """
+            INSERT INTO app_schema_meta (k, v) VALUES (%s, %s)
+            ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v
+            """,
+            (PROFILES_UUID_META_KEY, "1"),
+        )
 
 
 def _legacy_id() -> str:
@@ -298,6 +415,119 @@ def _migrate_postgres_schedules(conn: PgConnection, legacy: str) -> None:
     )
 
 
+def _collect_profile_id_pairs(
+    conn: sqlite3.Connection | PgConnection,
+) -> set[tuple[str, str]]:
+    backend = _backend_of_conn(conn)
+    pairs: set[tuple[str, str]] = set()
+    for row in conn.execute("SELECT DISTINCT user_id, profile_id FROM digest_snapshots"):
+        pairs.add((str(row[0]), str(row[1])))
+    for row in conn.execute("SELECT DISTINCT user_id, profile_id FROM periodic_digest_schedules"):
+        pairs.add((str(row[0]), str(row[1])))
+    if backend == "sqlite":
+        assert isinstance(conn, sqlite3.Connection)
+        if _sqlite_table_exists(conn, "trend_profile_labels"):
+            for row in conn.execute("SELECT DISTINCT user_id, profile_id FROM trend_profile_labels"):
+                pairs.add((str(row[0]), str(row[1])))
+    else:
+        if _postgres_table_exists(conn, "trend_profile_labels"):
+            for row in conn.execute("SELECT DISTINCT user_id, profile_id FROM trend_profile_labels"):
+                pairs.add((str(row[0]), str(row[1])))
+    return pairs
+
+
+def _load_trend_labels_map(
+    conn: sqlite3.Connection | PgConnection,
+) -> dict[tuple[str, str], tuple[str, str]]:
+    backend = _backend_of_conn(conn)
+    out: dict[tuple[str, str], tuple[str, str]] = {}
+    if backend == "sqlite":
+        assert isinstance(conn, sqlite3.Connection)
+        if not _sqlite_table_exists(conn, "trend_profile_labels"):
+            return out
+        cur = conn.execute(
+            "SELECT user_id, profile_id, display_name, COALESCE(note, '') FROM trend_profile_labels"
+        )
+    else:
+        if not _postgres_table_exists(conn, "trend_profile_labels"):
+            return out
+        cur = conn.execute(
+            "SELECT user_id, profile_id, display_name, COALESCE(note, '') FROM trend_profile_labels"
+        )
+    for row in cur.fetchall():
+        out[(str(row[0]), str(row[1]))] = (str(row[2]), str(row[3]))
+    return out
+
+
+def migrate_digest_profiles_uuid_v1(conn: sqlite3.Connection | PgConnection) -> None:
+    """Старые произвольные profile_id → UUID; trend_profile_labels → digest_profiles."""
+    if _profiles_uuid_migration_done(conn):
+        return
+    backend = _backend_of_conn(conn)
+    pairs = _collect_profile_id_pairs(conn)
+    if not pairs:
+        _mark_profiles_uuid_migration_done(conn)
+        return
+
+    labels_map = _load_trend_labels_map(conn)
+    now = datetime.now(timezone.utc).isoformat()
+
+    mapping: dict[tuple[str, str], str] = {}
+    for uid, old_pid in pairs:
+        new_pid = old_pid if _looks_like_uuid(old_pid) else stable_legacy_profile_uuid(uid, old_pid)
+        mapping[(uid, old_pid)] = new_pid
+
+    ph = _ph(backend)
+    seen_profile_ids: set[str] = set()
+    for (uid, old_pid), new_pid in mapping.items():
+        if new_pid in seen_profile_ids:
+            continue
+        seen_profile_ids.add(new_pid)
+        dname, note_v = labels_map.get((uid, old_pid), (old_pid, ""))
+        dn = (dname or "").strip() or old_pid
+        nv = (note_v or "").strip()
+        if backend == "sqlite":
+            conn.execute(
+                f"""
+                INSERT OR IGNORE INTO digest_profiles (profile_id, user_id, display_name, note, created_at, updated_at)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                """,
+                (new_pid, uid, dn, nv, now, now),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO digest_profiles (profile_id, user_id, display_name, note, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (profile_id) DO NOTHING
+                """,
+                (new_pid, uid, dn, nv, now, now),
+            )
+
+    for (uid, old_pid), new_pid in mapping.items():
+        if old_pid == new_pid:
+            continue
+        conn.execute(
+            f"UPDATE digest_snapshots SET profile_id = {ph} WHERE user_id = {ph} AND profile_id = {ph}",
+            (new_pid, uid, old_pid),
+        )
+        conn.execute(
+            f"UPDATE periodic_digest_schedules SET profile_id = {ph} WHERE user_id = {ph} AND profile_id = {ph}",
+            (new_pid, uid, old_pid),
+        )
+
+    if backend == "sqlite":
+        assert isinstance(conn, sqlite3.Connection)
+        if _sqlite_table_exists(conn, "trend_profile_labels"):
+            conn.execute("DROP TABLE trend_profile_labels")
+    else:
+        if _postgres_table_exists(conn, "trend_profile_labels"):
+            conn.execute("DROP TABLE IF EXISTS trend_profile_labels")
+
+    _mark_profiles_uuid_migration_done(conn)
+    logger.info("digest_profiles UUID migration v1 applied (%s legacy keys)", len(pairs))
+
+
 def ensure_multiuser_schema(conn: sqlite3.Connection | PgConnection) -> None:
     """Добавляет user_id и auth_users к уже существующим БД со старой схемой."""
     legacy = _legacy_id()
@@ -312,6 +542,38 @@ def ensure_multiuser_schema(conn: sqlite3.Connection | PgConnection) -> None:
         _migrate_postgres_digest_snapshots(conn, legacy)
         _migrate_postgres_trend_labels(conn, legacy)
         _migrate_postgres_schedules(conn, legacy)
+
+
+def _ensure_saved_digest_share_columns(conn: sqlite3.Connection | PgConnection) -> None:
+    backend = _backend_of_conn(conn)
+    if backend == "sqlite":
+        assert isinstance(conn, sqlite3.Connection)
+        cols = _sqlite_table_columns(conn, "saved_digests")
+        if not cols:
+            return
+        if "share_token" not in cols:
+            logger.info("Migrating sqlite saved_digests: share columns")
+            conn.execute("ALTER TABLE saved_digests ADD COLUMN share_token TEXT NULL")
+            conn.execute("ALTER TABLE saved_digests ADD COLUMN share_created_at TEXT NULL")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_digests_share_token "
+            "ON saved_digests(share_token) WHERE share_token IS NOT NULL"
+        )
+    else:
+        assert not isinstance(conn, sqlite3.Connection)
+        cols = _postgres_table_columns(conn, "saved_digests")
+        if not cols:
+            return
+        if "share_token" not in cols:
+            logger.info("Migrating postgres saved_digests: share columns")
+            conn.execute("ALTER TABLE saved_digests ADD COLUMN IF NOT EXISTS share_token TEXT NULL")
+            conn.execute("ALTER TABLE saved_digests ADD COLUMN IF NOT EXISTS share_created_at TEXT NULL")
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_digests_share_token
+            ON saved_digests(share_token) WHERE share_token IS NOT NULL
+            """
+        )
 
 
 @contextmanager
@@ -370,18 +632,41 @@ def _ensure_sqlite_auth_users(conn: sqlite3.Connection) -> None:
     )
 
 
+def _ensure_sqlite_auth_refresh_sessions(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS auth_refresh_sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_auth_refresh_sessions_user ON auth_refresh_sessions(user_id)"
+    )
+
+
 def init_snapshot_schema(conn: sqlite3.Connection | PgConnection) -> None:
     backend = _backend_of_conn(conn)
     if backend == "sqlite":
         conn.executescript(CREATE_SQL_SQLITE)
         _ensure_sqlite_auth_users(conn)
+        _ensure_sqlite_auth_refresh_sessions(conn)
     else:
         conn.execute(CREATE_SQL_POSTGRES_DIGEST)
-        conn.execute(CREATE_SQL_POSTGRES_LABELS)
+        conn.execute(CREATE_SQL_POSTGRES_DIGEST_PROFILES)
         conn.execute(CREATE_SQL_POSTGRES_SCHEDULES)
         conn.execute(CREATE_SQL_POSTGRES_AUTH_USERS)
+        conn.execute(CREATE_SQL_POSTGRES_AUTH_REFRESH)
         conn.execute(CREATE_SQL_POSTGRES_SAVED_DIGESTS)
+        conn.execute(CREATE_SQL_POSTGRES_SCHEDULE_RUNS_TABLE)
+        conn.execute(CREATE_SQL_POSTGRES_SCHEDULE_RUNS_INDEX)
     ensure_multiuser_schema(conn)
+    _ensure_saved_digest_share_columns(conn)
+    migrate_digest_profiles_uuid_v1(conn)
 
 
 def fetch_latest_snapshot_before(
@@ -447,80 +732,164 @@ def _payload_topic_and_work_count(payload: dict[str, Any]) -> tuple[list[str], i
     return topic_queries, work_count
 
 
+def insert_digest_profile(
+    conn: sqlite3.Connection | PgConnection,
+    user_id: str,
+    display_name: str,
+    note: str | None,
+) -> tuple[str, str]:
+    pid = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    nv = (note or "").strip()
+    dn = display_name.strip()
+    if not dn:
+        raise ValueError("display_name пустой")
+    backend = _backend_of_conn(conn)
+    ph = _ph(backend)
+    if backend == "sqlite":
+        conn.execute(
+            f"""
+            INSERT INTO digest_profiles (profile_id, user_id, display_name, note, created_at, updated_at)
+            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+            """,
+            (pid, user_id, dn, nv, now, now),
+        )
+    else:
+        conn.execute(
+            """
+            INSERT INTO digest_profiles (profile_id, user_id, display_name, note, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (pid, user_id, dn, nv, now, now),
+        )
+    return pid, now
+
+
+def digest_profile_exists_for_user(
+    conn: sqlite3.Connection | PgConnection,
+    user_id: str,
+    profile_id: str,
+) -> bool:
+    backend = _backend_of_conn(conn)
+    ph = _ph(backend)
+    row = conn.execute(
+        f"SELECT 1 FROM digest_profiles WHERE user_id = {ph} AND profile_id = {ph}",
+        (user_id, profile_id),
+    ).fetchone()
+    return row is not None
+
+
 def upsert_profile_label(
     conn: sqlite3.Connection | PgConnection,
     user_id: str,
     profile_id: str,
     display_name: str,
     note: str | None,
-) -> None:
+) -> int:
+    """Обновить подпись существующего профиля (digest_profiles). Возвращает число обновлённых строк."""
     now = datetime.now(timezone.utc).isoformat()
     backend = _backend_of_conn(conn)
     ph = _ph(backend)
     note_v = (note or "").strip()
     if backend == "sqlite":
-        sql = f"""
-            INSERT INTO trend_profile_labels (user_id, profile_id, display_name, note, updated_at)
-            VALUES ({ph}, {ph}, {ph}, {ph}, {ph})
-            ON CONFLICT(user_id, profile_id) DO UPDATE SET
-                display_name = excluded.display_name,
-                note = excluded.note,
-                updated_at = excluded.updated_at
+        cur = conn.execute(
+            f"""
+            UPDATE digest_profiles SET display_name = {ph}, note = {ph}, updated_at = {ph}
+            WHERE user_id = {ph} AND profile_id = {ph}
+            """,
+            (display_name.strip(), note_v, now, user_id, profile_id),
+        )
+        return int(cur.rowcount or 0)
+    cur = conn.execute(
         """
-    else:
-        sql = f"""
-            INSERT INTO trend_profile_labels (user_id, profile_id, display_name, note, updated_at)
-            VALUES ({ph}, {ph}, {ph}, {ph}, {ph})
-            ON CONFLICT (user_id, profile_id) DO UPDATE SET
-                display_name = EXCLUDED.display_name,
-                note = EXCLUDED.note,
-                updated_at = EXCLUDED.updated_at
-        """
-    conn.execute(sql, (user_id, profile_id, display_name.strip(), note_v, now))
+        UPDATE digest_profiles SET display_name = %s, note = %s, updated_at = %s
+        WHERE user_id = %s AND profile_id = %s
+        """,
+        (display_name.strip(), note_v, now, user_id, profile_id),
+    )
+    rc = cur.rowcount
+    return int(rc) if rc is not None else 0
 
 
 def list_profile_summaries(
     conn: sqlite3.Connection | PgConnection,
     user_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """По одной строке на (user_id,) profile_id: последний период, счётчик снимков, подпись."""
+    """Сводки по digest_profiles, в т.ч. без снимков; агрегаты по digest_snapshots."""
     backend = _backend_of_conn(conn)
     ph = _ph(backend)
-    filter_sql = ""
-    params: tuple[Any, ...] = ()
+    profile_where = ""
+    snap_filter = ""
+    exec_params: tuple[Any, ...] = ()
     if user_id is not None:
-        filter_sql = f"WHERE user_id = {ph}"
-        params = (user_id,)
+        profile_where = f"WHERE p.user_id = {ph}"
+        snap_filter = f"WHERE user_id = {ph}"
+        exec_params = (user_id, user_id, user_id)
 
-    sql = f"""
-        SELECT d.user_id, d.profile_id, d.period, d.created_at, d.payload_json, sc.cnt,
-               l.display_name, l.note
-        FROM digest_snapshots d
-        INNER JOIN (
-            SELECT user_id, profile_id, MAX(period) AS mp
-            FROM digest_snapshots
-            {filter_sql}
-            GROUP BY user_id, profile_id
-        ) t ON d.user_id = t.user_id AND d.profile_id = t.profile_id AND d.period = t.mp
-        INNER JOIN (
-            SELECT user_id, profile_id, COUNT(*) AS cnt
-            FROM digest_snapshots
-            {filter_sql}
-            GROUP BY user_id, profile_id
-        ) sc ON d.user_id = sc.user_id AND d.profile_id = sc.profile_id
-        LEFT JOIN trend_profile_labels l
-            ON l.user_id = d.user_id AND l.profile_id = d.profile_id
-        ORDER BY d.user_id, d.profile_id
-    """
-    cur = conn.execute(sql, params + params)
+    if backend == "sqlite":
+        sql = f"""
+            SELECT p.user_id, p.profile_id, p.display_name, p.note,
+                   COALESCE(sc.cnt, 0), last.period, last.created_at, last.payload_json
+            FROM digest_profiles p
+            LEFT JOIN (
+              SELECT user_id, profile_id, COUNT(*) AS cnt
+              FROM digest_snapshots
+              {snap_filter}
+              GROUP BY user_id, profile_id
+            ) sc ON p.user_id = sc.user_id AND p.profile_id = sc.profile_id
+            LEFT JOIN (
+              SELECT d.user_id, d.profile_id, d.period, d.created_at, d.payload_json
+              FROM digest_snapshots d
+              INNER JOIN (
+                SELECT user_id, profile_id, MAX(period) AS mp
+                FROM digest_snapshots
+                {snap_filter}
+                GROUP BY user_id, profile_id
+              ) t ON d.user_id = t.user_id AND d.profile_id = t.profile_id AND d.period = t.mp
+            ) last ON p.user_id = last.user_id AND p.profile_id = last.profile_id
+            {profile_where}
+            ORDER BY p.user_id, p.display_name COLLATE NOCASE
+        """
+    else:
+        sql = f"""
+            SELECT p.user_id, p.profile_id, p.display_name, p.note,
+                   COALESCE(sc.cnt, 0), last.period, last.created_at, last.payload_json
+            FROM digest_profiles p
+            LEFT JOIN (
+              SELECT user_id, profile_id, COUNT(*) AS cnt
+              FROM digest_snapshots
+              {snap_filter}
+              GROUP BY user_id, profile_id
+            ) sc ON p.user_id = sc.user_id AND p.profile_id = sc.profile_id
+            LEFT JOIN (
+              SELECT d.user_id, d.profile_id, d.period, d.created_at, d.payload_json
+              FROM digest_snapshots d
+              INNER JOIN (
+                SELECT user_id, profile_id, MAX(period) AS mp
+                FROM digest_snapshots
+                {snap_filter}
+                GROUP BY user_id, profile_id
+              ) t ON d.user_id = t.user_id AND d.profile_id = t.profile_id AND d.period = t.mp
+            ) last ON p.user_id = last.user_id AND p.profile_id = last.profile_id
+            {profile_where}
+            ORDER BY p.user_id, p.display_name
+        """
+
+    if exec_params:
+        cur = conn.execute(sql, exec_params)
+    else:
+        cur = conn.execute(sql)
+
     rows = cur.fetchall()
     out: list[dict[str, Any]] = []
     for row in rows:
-        uid, profile_id, period, created_at, raw_payload, cnt, display_name, note = row
-        try:
-            payload = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
-        except json.JSONDecodeError:
-            payload = {}
+        uid, profile_id, display_name, note, cnt, period, created_at, raw_payload = row
+        payload: dict[str, Any] = {}
+        if raw_payload is not None:
+            try:
+                payload = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+            except json.JSONDecodeError:
+                payload = {}
         if not isinstance(payload, dict):
             payload = {}
         tq, wc = _payload_topic_and_work_count(payload)

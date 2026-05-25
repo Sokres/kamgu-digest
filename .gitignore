@@ -11,3 +11,7 @@ __pycache__/
 .venv/
 *.log
 .DS_Store
+
+# Локальные данные (снимки SQLite, загруженные PDF/кэш — не для репозитория)
+*.db
+backend/data/

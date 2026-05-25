@@ -2,6 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 
 import { PageOnboarding } from '@/components/PageOnboarding'
+import { TrendAreaChart } from '@/components/TrendAreaChart'
+import { TrendCompareChart } from '@/components/TrendCompareChart'
+import { TrendDeltaBarChart } from '@/components/TrendDeltaBarChart'
+import { TrendKpiCards } from '@/components/TrendKpiCards'
 import { TrendSeriesChart } from '@/components/TrendSeriesChart'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -9,13 +13,22 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
-import { ApiError, fetchTrendProfiles, fetchTrendSeries, putTrendProfileLabel } from '@/lib/api'
+import { ApiError, createTrendProfile, fetchTrendProfiles, fetchTrendSeries, putTrendProfileLabel } from '@/lib/api'
 import { deltaSignedClass } from '@/lib/deltaClass'
 import { getMonthlyInternalKey } from '@/lib/settings'
 import type { TrendProfileSummary, TrendSeriesPoint } from '@/types/api'
 import { cn } from '@/lib/utils'
+
+const COMPARE_NONE = '__none__'
 
 function profileTitle(p: TrendProfileSummary): string {
   const d = (p.display_name ?? '').trim()
@@ -35,12 +48,18 @@ export function TrendsPage() {
   const [labelNote, setLabelNote] = useState('')
   const [savingLabel, setSavingLabel] = useState(false)
   const [labelMsg, setLabelMsg] = useState<string | null>(null)
+  const [compareId, setCompareId] = useState<string>(COMPARE_NONE)
+  const [comparePoints, setComparePoints] = useState<TrendSeriesPoint[]>([])
+  const [loadingCompare, setLoadingCompare] = useState(false)
+
+  const [newTrendName, setNewTrendName] = useState('')
+  const [creatingTrend, setCreatingTrend] = useState(false)
 
   const loadProfiles = useCallback(async () => {
     setLoadingList(true)
     setError(null)
     try {
-      const list = await fetchTrendProfiles(apiBase)
+      const list = await fetchTrendProfiles(apiBase, { internalKey: getMonthlyInternalKey() })
       setProfiles(list)
       setSelectedId((prev) => prev ?? list[0]?.profile_id ?? null)
     } catch (e) {
@@ -54,6 +73,30 @@ export function TrendsPage() {
   useEffect(() => {
     void loadProfiles()
   }, [loadProfiles])
+
+  async function handleCreateTrendProfile() {
+    const name = newTrendName.trim()
+    if (!name) {
+      setError('Введите название направления.')
+      return
+    }
+    setCreatingTrend(true)
+    setError(null)
+    try {
+      const res = await createTrendProfile(
+        apiBase,
+        { display_name: name },
+        { internalKey: getMonthlyInternalKey() },
+      )
+      setNewTrendName('')
+      await loadProfiles()
+      setSelectedId(res.profile_id)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e))
+    } finally {
+      setCreatingTrend(false)
+    }
+  }
 
   const selectedProfile = profiles.find((p) => p.profile_id === selectedId)
 
@@ -90,6 +133,35 @@ export function TrendsPage() {
   }, [apiBase, selectedId, profiles])
 
   useEffect(() => {
+    if (compareId !== COMPARE_NONE && compareId === selectedId) {
+      setCompareId(COMPARE_NONE)
+    }
+  }, [selectedId, compareId])
+
+  useEffect(() => {
+    if (!selectedId || compareId === COMPARE_NONE || compareId === selectedId) {
+      setComparePoints([])
+      return
+    }
+    const prof = profiles.find((p) => p.profile_id === compareId)
+    let cancelled = false
+    setLoadingCompare(true)
+    fetchTrendSeries(apiBase, compareId, { userId: prof?.user_id })
+      .then((res) => {
+        if (!cancelled) setComparePoints(res.points)
+      })
+      .catch(() => {
+        if (!cancelled) setComparePoints([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCompare(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [apiBase, compareId, selectedId, profiles])
+
+  useEffect(() => {
     if (!selectedProfile) {
       if (selectedId) {
         setLabelName(selectedId)
@@ -102,6 +174,12 @@ export function TrendsPage() {
   }, [selectedProfile, selectedId])
 
   const maxWork = Math.max(1, ...points.map((p) => p.work_count))
+  const compareProfile = profiles.find((p) => p.profile_id === compareId)
+  const showCompare =
+    compareId !== COMPARE_NONE &&
+    compareId !== selectedId &&
+    comparePoints.length > 0 &&
+    !loadingSeries
 
   async function handleSaveLabel(e: React.FormEvent) {
     e.preventDefault()
@@ -132,24 +210,25 @@ export function TrendsPage() {
           {
             title: 'Накопление данных',
             detail:
-              'Профили появляются после периодического дайджеста с тем же profile_id; чем больше запусков, тем полнее ряд.',
+              'Профили появляются после периодического дайджеста с тем же идентификатором профиля; чем больше запусков, тем полнее ряд.',
           },
           {
-            title: 'График и таблица',
+            title: 'Графики и KPI',
             detail:
-              'Столбцы — периоды; высота отражает число работ в топе. Подсказка при наведении или фокусе с клавиатуры.',
+              'Сводные карточки, столбцы+линия по размеру топа, отдельно — прирост к прошлому месяцу, площадной тренд и таблица.',
           },
           {
             title: 'Подпись профиля',
-            detail: 'Ниже можно задать отображаемое имя и заметку (нужен X-Internal-Key, если включён на сервере).',
+            detail:
+              'Можно задать удобное имя и заметку для отображения в списке. Если на сервере включена проверка служебного ключа — используйте тот же ключ, что в «Настройки».',
           },
         ]}
       />
 
       <div className="text-sm text-muted-foreground print:hidden">
-        Данные из ежемесячных снимков в БД (<code className="rounded bg-muted px-1 py-0.5 text-xs">digest_snapshots</code>
-        ). Чем больше периодов вы накопите через «Периодический» дайджест, тем полнее график. Метрика: число работ в топе (
-        <code className="rounded bg-muted px-1 py-0.5 text-xs">works</code> в снимке).
+        Здесь отображаются сохранённые ежемесячные снимки по направлениям: сводные показатели, динамика размера топа,
+        прирост к прошлому периоду и сравнение двух направлений на одном графике. Число «работ в топе» — сколько статей
+        попало в ваш фиксированный топ в выбранном месяце.
       </div>
 
       {error ? (
@@ -162,26 +241,46 @@ export function TrendsPage() {
         <CardHeader>
           <CardTitle>Профили</CardTitle>
           <CardDescription>
-            Каждый <code className="text-xs">profile_id</code> из ежемесячного дайджеста — отдельная линия на графике.
+            Направления создаются с человекочитаемым именем (UUID задаётся сервером). После первого сохранённого снимка
+            появятся точки на графиках.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-end gap-2 print:hidden">
+            <div className="grid min-w-[200px] flex-1 gap-2">
+              <Label htmlFor="new-trend-name">Новое направление</Label>
+              <Input
+                id="new-trend-name"
+                value={newTrendName}
+                onChange={(e) => setNewTrendName(e.target.value)}
+                placeholder="Название линии исследований"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={creatingTrend}
+              onClick={() => void handleCreateTrendProfile()}
+            >
+              {creatingTrend ? 'Создание…' : 'Создать'}
+            </Button>
+          </div>
           {loadingList ? (
             <p className="text-sm text-muted-foreground">Загрузка…</p>
           ) : profiles.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Пока нет снимков. Запустите{' '}
+              Пока нет направлений — создайте одно полем выше или на странице{' '}
               <a className="font-medium text-primary underline-offset-4 hover:underline" href="/monthly">
-                ежемесячный дайджест
-              </a>{' '}
-              с нужным <code className="text-xs">profile_id</code> — после сохранения снимка профиль появится здесь.
+                периодический дайджест
+              </a>
+              . Снимки появятся после первого успешного запуска дайджеста для выбранного направления.
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Имя</TableHead>
-                  <TableHead className="hidden sm:table-cell">profile_id</TableHead>
+                  <TableHead className="hidden sm:table-cell">Id профиля</TableHead>
                   <TableHead className="text-right">Снимков</TableHead>
                   <TableHead className="hidden md:table-cell">Последний период</TableHead>
                 </TableRow>
@@ -200,7 +299,7 @@ export function TrendsPage() {
                         {p.profile_id}
                       </TableCell>
                       <TableCell className="text-right">{p.snapshot_count}</TableCell>
-                      <TableCell className="hidden md:table-cell">{p.last_period}</TableCell>
+                      <TableCell className="hidden md:table-cell">{p.last_period ?? '—'}</TableCell>
                     </TableRow>
                   )
                 })}
@@ -229,7 +328,8 @@ export function TrendsPage() {
               )}
             </CardTitle>
             <CardDescription>
-              Изменение размера топа работ по сравнению с прошлым сохранённым периодом (месяц).
+              Изменение размера топа работ по сравнению с прошлым сохранённым периодом (месяц). Ниже можно наложить два
+              направления на один график.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -239,8 +339,54 @@ export function TrendsPage() {
               <p className="text-sm text-muted-foreground">Нет точек для этого профиля.</p>
             ) : (
               <>
-                <div className="print:hidden">
-                  <TrendSeriesChart points={points} maxWork={maxWork} />
+                {profiles.length > 1 ? (
+                  <div className="grid max-w-md gap-2 print:hidden">
+                    <Label htmlFor="trend-compare">Сравнить с профилем</Label>
+                    <Select value={compareId} onValueChange={setCompareId}>
+                      <SelectTrigger id="trend-compare" className="w-full sm:w-[min(100%,380px)]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={COMPARE_NONE}>Не сравнивать</SelectItem>
+                        {profiles
+                          .filter((p) => p.profile_id !== selectedId)
+                          .map((p) => (
+                            <SelectItem key={p.profile_id} value={p.profile_id}>
+                              {profileTitle(p)}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    {compareId !== COMPARE_NONE && compareId !== selectedId && loadingCompare ? (
+                      <p className="text-xs text-muted-foreground">Загрузка ряда для сравнения…</p>
+                    ) : null}
+                    {compareId !== COMPARE_NONE &&
+                    compareId !== selectedId &&
+                    !loadingCompare &&
+                    comparePoints.length === 0 ? (
+                      <p className="text-xs text-amber-800 dark:text-amber-100/90">
+                        Для выбранного профиля нет точек — показан только график текущего.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="space-y-4 print:hidden">
+                  <TrendKpiCards points={points} />
+                  {showCompare ? (
+                    <TrendCompareChart
+                      seriesA={points}
+                      seriesB={comparePoints}
+                      labelA={selectedProfile ? profileTitle(selectedProfile) : selectedId ?? ''}
+                      labelB={compareProfile ? profileTitle(compareProfile) : compareId}
+                    />
+                  ) : (
+                    <TrendSeriesChart points={points} maxWork={maxWork} />
+                  )}
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <TrendDeltaBarChart points={points} />
+                    <TrendAreaChart points={points} />
+                  </div>
                 </div>
 
                 <Table>
@@ -283,8 +429,8 @@ export function TrendsPage() {
             <form className="space-y-3 border-t border-border/60 pt-6" onSubmit={handleSaveLabel}>
               <p className="text-sm font-medium">Подпись в интерфейсе</p>
               <p className="text-xs text-muted-foreground">
-                Сохраняется в БД. Если задан <code className="text-[10px]">MONTHLY_DIGEST_CRON_SECRET</code>, нужен тот же{' '}
-                <code className="text-[10px]">X-Internal-Key</code>, что и для ежемесячного дайджеста (см. Настройки).
+                Сохраняется на сервере. Если администратор включил проверку служебного ключа для автоматических
+                запусков, укажите тот же ключ в «Настройки», что и для периодического дайджеста.
               </p>
               <div className="grid gap-2">
                 <Label htmlFor="trend-label-name">Отображаемое имя</Label>

@@ -1,8 +1,12 @@
 import type {
+  AuthMeResponse,
   AuthStatusResponse,
   AuthTokenResponse,
+  DigestProfileCreated,
+  DigestProfileCreateBody,
   DigestRequest,
   DigestResponse,
+  DigestScheduleRunOut,
   DigestSchedulesListResponse,
   MonthlyDigestRequest,
   MonthlyDigestResponse,
@@ -14,11 +18,12 @@ import type {
   SavedDigestCreated,
   SavedDigestListItem,
   SavedDigestOut,
+  SavedDigestShareResponse,
   TrendProfileLabelUpdate,
   TrendProfileSummary,
   TrendSeriesResponse,
 } from '@/types/api'
-import { getAccessToken, getMonthlyInternalKey } from '@/lib/settings'
+import { getAccessToken, getMonthlyInternalKey, buildLlmClientHeaders, getRefreshToken, setAccessToken, setRefreshToken, clearAccessToken, clearRefreshToken } from '@/lib/settings'
 
 export class ApiError extends Error {
   readonly status: number
@@ -66,6 +71,65 @@ function mapFetchError(e: unknown): never {
   throw new ApiError(msg, 0)
 }
 
+let refreshInFlight: Promise<boolean> | null = null
+
+async function authRefreshRaw(baseUrl: string, refreshToken: string, signal?: AbortSignal): Promise<AuthTokenResponse> {
+  const r = await fetch(`${baseUrl}/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+    signal,
+  })
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+  return r.json() as Promise<AuthTokenResponse>
+}
+
+/** Обновление пары токенов (например из AuthContext); не использует очередь повторов API. */
+export async function authRefresh(
+  baseUrl: string,
+  refreshToken: string,
+  signal?: AbortSignal,
+): Promise<AuthTokenResponse> {
+  return authRefreshRaw(baseUrl, refreshToken, signal)
+}
+
+async function runRefreshSession(baseUrl: string): Promise<boolean> {
+  const rt = getRefreshToken().trim()
+  if (!rt) return false
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const data = await authRefreshRaw(baseUrl, rt)
+        setAccessToken(data.access_token)
+        setRefreshToken(data.refresh_token)
+        return true
+      } catch {
+        clearAccessToken()
+        clearRefreshToken()
+        return false
+      } finally {
+        refreshInFlight = null
+      }
+    })()
+  }
+  return refreshInFlight
+}
+
+/**
+ * Повтор запроса после 401, если в браузере есть refresh-токен (один раз).
+ */
+async function fetchWithAuthRetry(baseUrl: string, exec: () => Promise<Response>): Promise<Response> {
+  const r = await exec()
+  if (r.status !== 401 || !getRefreshToken().trim()) {
+    return r
+  }
+  const ok = await runRefreshSession(baseUrl)
+  if (!ok) {
+    return r
+  }
+  return exec()
+}
+
 function bearerHeaders(options?: { accessToken?: string }): Record<string, string> {
   const token = (options?.accessToken ?? getAccessToken()).trim()
   return token ? { Authorization: `Bearer ${token}` } : {}
@@ -100,6 +164,42 @@ export async function fetchAuthStatus(baseUrl: string, signal?: AbortSignal): Pr
   return r.json() as Promise<AuthStatusResponse>
 }
 
+export async function fetchAuthMe(
+  baseUrl: string,
+  options?: { signal?: AbortSignal; accessToken?: string },
+): Promise<AuthMeResponse> {
+  const r = await fetch(`${baseUrl}/auth/me`, {
+    signal: options?.signal,
+    headers: { ...authOnlyHeaders(options) },
+  })
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+  return r.json() as Promise<AuthMeResponse>
+}
+
+export async function authLogout(
+  baseUrl: string,
+  options?: { refreshToken?: string | null; signal?: AbortSignal; accessToken?: string },
+): Promise<void> {
+  const payload =
+    options?.refreshToken && options.refreshToken.trim()
+      ? { refresh_token: options.refreshToken.trim() }
+      : {}
+  let r: Response
+  try {
+    r = await fetch(`${baseUrl}/auth/logout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authOnlyHeaders(options) },
+      body: JSON.stringify(payload),
+      signal: options?.signal,
+    })
+  } catch (e) {
+    mapFetchError(e)
+  }
+  if (!r.ok && r.status !== 401) {
+    throw new ApiError(await parseFastApiDetail(r), r.status)
+  }
+}
+
 export async function authLogin(
   baseUrl: string,
   body: { username: string; password: string },
@@ -130,6 +230,27 @@ export async function authRegister(
   return r.json() as Promise<AuthTokenResponse>
 }
 
+export async function authChangePassword(
+  baseUrl: string,
+  body: { current_password: string; new_password: string },
+  options?: { signal?: AbortSignal; accessToken?: string },
+): Promise<void> {
+  let r: Response
+  try {
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authOnlyHeaders(options) },
+        body: JSON.stringify(body),
+        signal: options?.signal,
+      }),
+    )
+  } catch (e) {
+    mapFetchError(e)
+  }
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+}
+
 export async function fetchHealth(baseUrl: string): Promise<{ status: string }> {
   const r = await fetch(`${baseUrl}/health`)
   if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
@@ -142,10 +263,12 @@ export async function listSavedDigests(
 ): Promise<SavedDigestListItem[]> {
   let r: Response
   try {
-    r = await fetch(`${baseUrl}/saved-digests`, {
-      headers: { ...authOnlyHeaders(options) },
-      signal: options?.signal,
-    })
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/saved-digests`, {
+        headers: { ...authOnlyHeaders(options) },
+        signal: options?.signal,
+      }),
+    )
   } catch (e) {
     mapFetchError(e)
   }
@@ -160,15 +283,61 @@ export async function getSavedDigest(
 ): Promise<SavedDigestOut> {
   let r: Response
   try {
-    r = await fetch(`${baseUrl}/saved-digests/${encodeURIComponent(id)}`, {
-      headers: { ...authOnlyHeaders(options) },
-      signal: options?.signal,
-    })
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/saved-digests/${encodeURIComponent(id)}`, {
+        headers: { ...authOnlyHeaders(options) },
+        signal: options?.signal,
+      }),
+    )
   } catch (e) {
     mapFetchError(e)
   }
   if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
   return r.json() as Promise<SavedDigestOut>
+}
+
+function filenameFromContentDisposition(cd: string | null): string | null {
+  if (!cd) return null
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(cd)
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1].trim().replace(/^"(.*)"$/, '$1'))
+    } catch {
+      return star[1].trim()
+    }
+  }
+  const q = /filename="([^"]+)"/i.exec(cd)
+  if (q?.[1]) return q[1]
+  return null
+}
+
+export async function downloadSavedDigestDocx(
+  baseUrl: string,
+  id: string,
+  options?: { accessToken?: string },
+): Promise<void> {
+  let r: Response
+  try {
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/saved-digests/${encodeURIComponent(id)}/export/docx`, {
+        headers: { ...authOnlyHeaders(options) },
+      }),
+    )
+  } catch (e) {
+    mapFetchError(e)
+  }
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+  const blob = await r.blob()
+  const name = filenameFromContentDisposition(r.headers.get('Content-Disposition')) ?? `digest-${id}.docx`
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
 export async function saveDigest(
@@ -178,12 +347,14 @@ export async function saveDigest(
 ): Promise<SavedDigestCreated> {
   let r: Response
   try {
-    r = await fetch(`${baseUrl}/saved-digests`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authOnlyHeaders(options) },
-      body: JSON.stringify(body),
-      signal: options?.signal,
-    })
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/saved-digests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authOnlyHeaders(options) },
+        body: JSON.stringify(body),
+        signal: options?.signal,
+      }),
+    )
   } catch (e) {
     mapFetchError(e)
   }
@@ -198,15 +369,104 @@ export async function deleteSavedDigest(
 ): Promise<void> {
   let r: Response
   try {
-    r = await fetch(`${baseUrl}/saved-digests/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: { ...authOnlyHeaders(options) },
-      signal: options?.signal,
-    })
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/saved-digests/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { ...authOnlyHeaders(options) },
+        signal: options?.signal,
+      }),
+    )
   } catch (e) {
     mapFetchError(e)
   }
   if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+}
+
+export async function fetchPublicSavedDigest(
+  baseUrl: string,
+  token: string,
+  signal?: AbortSignal,
+): Promise<SavedDigestOut> {
+  const enc = encodeURIComponent(token)
+  let r: Response
+  try {
+    r = await fetch(`${baseUrl}/public/saved-digests/${enc}`, { signal })
+  } catch (e) {
+    mapFetchError(e)
+  }
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+  return r.json() as Promise<SavedDigestOut>
+}
+
+export async function createSavedDigestShare(
+  baseUrl: string,
+  digestId: string,
+  options?: { rotate?: boolean; signal?: AbortSignal; accessToken?: string },
+): Promise<SavedDigestShareResponse> {
+  const enc = encodeURIComponent(digestId)
+  const q = options?.rotate ? '?rotate=true' : ''
+  let r: Response
+  try {
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/saved-digests/${enc}/share${q}`, {
+        method: 'POST',
+        headers: authOnlyHeaders(options),
+        signal: options?.signal,
+      }),
+    )
+  } catch (e) {
+    mapFetchError(e)
+  }
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+  return r.json() as Promise<SavedDigestShareResponse>
+}
+
+export async function deleteSavedDigestShare(
+  baseUrl: string,
+  digestId: string,
+  options?: { signal?: AbortSignal; accessToken?: string },
+): Promise<void> {
+  const enc = encodeURIComponent(digestId)
+  let r: Response
+  try {
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/saved-digests/${enc}/share`, {
+        method: 'DELETE',
+        headers: authOnlyHeaders(options),
+        signal: options?.signal,
+      }),
+    )
+  } catch (e) {
+    mapFetchError(e)
+  }
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+}
+
+export async function fetchScheduleRuns(
+  baseUrl: string,
+  scheduleId: string,
+  options?: {
+    limit?: number
+    internalKey?: string
+    signal?: AbortSignal
+    accessToken?: string
+  },
+): Promise<DigestScheduleRunOut[]> {
+  const enc = encodeURIComponent(scheduleId)
+  const lim = options?.limit != null ? Math.min(200, Math.max(1, options.limit)) : 50
+  let r: Response
+  try {
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/digests/schedules/${enc}/runs?limit=${lim}`, {
+        headers: apiHeaders({}, options),
+        signal: options?.signal,
+      }),
+    )
+  } catch (e) {
+    mapFetchError(e)
+  }
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+  return r.json() as Promise<DigestScheduleRunOut[]>
 }
 
 export async function createDigest(
@@ -216,12 +476,18 @@ export async function createDigest(
 ): Promise<DigestResponse> {
   let r: Response
   try {
-    r = await fetch(`${baseUrl}/digests`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...bearerHeaders(options) },
-      body: JSON.stringify(body),
-      signal: options?.signal,
-    })
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/digests`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...bearerHeaders(options),
+          ...buildLlmClientHeaders(),
+        },
+        body: JSON.stringify(body),
+        signal: options?.signal,
+      }),
+    )
   } catch (e) {
     mapFetchError(e)
   }
@@ -239,12 +505,14 @@ export async function uploadPdfDocument(
   let r: Response
   try {
     const headers = bearerHeaders(options)
-    r = await fetch(`${baseUrl}/documents/pdf`, {
-      method: 'POST',
-      headers,
-      body,
-      signal: options?.signal,
-    })
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/documents/pdf`, {
+        method: 'POST',
+        headers,
+        body,
+        signal: options?.signal,
+      }),
+    )
   } catch (e) {
     mapFetchError(e)
   }
@@ -259,12 +527,14 @@ export async function createMonthlyDigest(
 ): Promise<MonthlyDigestResponse> {
   let r: Response
   try {
-    r = await fetch(`${baseUrl}/digests/periodic`, {
-      method: 'POST',
-      headers: apiHeaders({ 'Content-Type': 'application/json' }, options),
-      body: JSON.stringify(body),
-      signal: options?.signal,
-    })
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/digests/periodic`, {
+        method: 'POST',
+        headers: { ...apiHeaders({ 'Content-Type': 'application/json' }, options), ...buildLlmClientHeaders() },
+        body: JSON.stringify(body),
+        signal: options?.signal,
+      }),
+    )
   } catch (e) {
     mapFetchError(e)
   }
@@ -278,10 +548,12 @@ export async function fetchDigestSchedules(
 ): Promise<DigestSchedulesListResponse> {
   let r: Response
   try {
-    r = await fetch(`${baseUrl}/digests/schedules`, {
-      headers: apiHeaders({}, options),
-      signal: options?.signal,
-    })
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/digests/schedules`, {
+        headers: apiHeaders({}, options),
+        signal: options?.signal,
+      }),
+    )
   } catch (e) {
     mapFetchError(e)
   }
@@ -296,12 +568,14 @@ export async function createDigestSchedule(
 ): Promise<PeriodicDigestScheduleOut> {
   let r: Response
   try {
-    r = await fetch(`${baseUrl}/digests/schedules`, {
-      method: 'POST',
-      headers: apiHeaders({ 'Content-Type': 'application/json' }, options),
-      body: JSON.stringify(body),
-      signal: options?.signal,
-    })
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/digests/schedules`, {
+        method: 'POST',
+        headers: apiHeaders({ 'Content-Type': 'application/json' }, options),
+        body: JSON.stringify(body),
+        signal: options?.signal,
+      }),
+    )
   } catch (e) {
     mapFetchError(e)
   }
@@ -318,12 +592,14 @@ export async function patchDigestSchedule(
   const enc = encodeURIComponent(scheduleId)
   let r: Response
   try {
-    r = await fetch(`${baseUrl}/digests/schedules/${enc}`, {
-      method: 'PATCH',
-      headers: apiHeaders({ 'Content-Type': 'application/json' }, options),
-      body: JSON.stringify(body),
-      signal: options?.signal,
-    })
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/digests/schedules/${enc}`, {
+        method: 'PATCH',
+        headers: apiHeaders({ 'Content-Type': 'application/json' }, options),
+        body: JSON.stringify(body),
+        signal: options?.signal,
+      }),
+    )
   } catch (e) {
     mapFetchError(e)
   }
@@ -339,11 +615,13 @@ export async function deleteDigestSchedule(
   const enc = encodeURIComponent(scheduleId)
   let r: Response
   try {
-    r = await fetch(`${baseUrl}/digests/schedules/${enc}`, {
-      method: 'DELETE',
-      headers: apiHeaders({}, options),
-      signal: options?.signal,
-    })
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/digests/schedules/${enc}`, {
+        method: 'DELETE',
+        headers: apiHeaders({}, options),
+        signal: options?.signal,
+      }),
+    )
   } catch (e) {
     mapFetchError(e)
   }
@@ -352,14 +630,38 @@ export async function deleteDigestSchedule(
 
 export async function fetchTrendProfiles(
   baseUrl: string,
-  options?: { signal?: AbortSignal; accessToken?: string },
+  options?: { signal?: AbortSignal; accessToken?: string; internalKey?: string },
 ): Promise<TrendProfileSummary[]> {
-  const r = await fetch(`${baseUrl}/trends/profiles`, {
-    signal: options?.signal,
-    headers: authOnlyHeaders(options),
-  })
+  const r = await fetchWithAuthRetry(baseUrl, () =>
+    fetch(`${baseUrl}/trends/profiles`, {
+      signal: options?.signal,
+      headers: apiHeaders({}, options),
+    }),
+  )
   if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
   return r.json() as Promise<TrendProfileSummary[]>
+}
+
+export async function createTrendProfile(
+  baseUrl: string,
+  body: DigestProfileCreateBody,
+  options?: { internalKey?: string; signal?: AbortSignal; accessToken?: string },
+): Promise<DigestProfileCreated> {
+  let r: Response
+  try {
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/trends/profiles`, {
+        method: 'POST',
+        headers: apiHeaders({ 'Content-Type': 'application/json' }, options),
+        body: JSON.stringify(body),
+        signal: options?.signal,
+      }),
+    )
+  } catch (e) {
+    mapFetchError(e)
+  }
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+  return r.json() as Promise<DigestProfileCreated>
 }
 
 export async function fetchTrendSeries(
@@ -376,10 +678,12 @@ export async function fetchTrendSeries(
     options?.userId && options.userId.trim()
       ? `?user_id=${encodeURIComponent(options.userId.trim())}`
       : ''
-  const r = await fetch(`${baseUrl}/trends/profiles/${enc}/series${q}`, {
-    signal: options?.signal,
-    headers: authOnlyHeaders(options),
-  })
+  const r = await fetchWithAuthRetry(baseUrl, () =>
+    fetch(`${baseUrl}/trends/profiles/${enc}/series${q}`, {
+      signal: options?.signal,
+      headers: authOnlyHeaders(options),
+    }),
+  )
   if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
   return r.json() as Promise<TrendSeriesResponse>
 }
@@ -391,12 +695,14 @@ export async function putTrendProfileLabel(
   options?: { internalKey?: string; signal?: AbortSignal; accessToken?: string },
 ): Promise<{ status: string; profile_id: string }> {
   const enc = encodeURIComponent(profileId)
-  const r = await fetch(`${baseUrl}/trends/profiles/${enc}/label`, {
-    method: 'PUT',
-    headers: apiHeaders({ 'Content-Type': 'application/json' }, options),
-    body: JSON.stringify(body),
-    signal: options?.signal,
-  })
+  const r = await fetchWithAuthRetry(baseUrl, () =>
+    fetch(`${baseUrl}/trends/profiles/${enc}/label`, {
+      method: 'PUT',
+      headers: apiHeaders({ 'Content-Type': 'application/json' }, options),
+      body: JSON.stringify(body),
+      signal: options?.signal,
+    }),
+  )
   if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
   return r.json() as Promise<{ status: string; profile_id: string }>
 }

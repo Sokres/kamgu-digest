@@ -5,6 +5,7 @@ import { DigestResultView } from '@/components/DigestResultView'
 import { PageOnboarding } from '@/components/PageOnboarding'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
@@ -14,7 +15,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ApiError, deleteSavedDigest, getSavedDigest, listSavedDigests } from '@/lib/api'
+import { ApiError, createSavedDigestShare, deleteSavedDigest, deleteSavedDigestShare, downloadSavedDigestDocx, getSavedDigest, listSavedDigests } from '@/lib/api'
+import { copyTextToClipboard } from '@/lib/digestExport'
 import type { SavedDigestListItem, SavedDigestOut } from '@/types/api'
 
 function formatWhen(iso: string): string {
@@ -35,6 +37,9 @@ export function SavedDigestsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [shareBusy, setShareBusy] = useState(false)
+  const [shareNote, setShareNote] = useState<string | null>(null)
+  const [docxBusy, setDocxBusy] = useState(false)
 
   const loadList = useCallback(async () => {
     setError(null)
@@ -104,6 +109,58 @@ export function SavedDigestsPage() {
     }
   }
 
+  function publicUrlForToken(t: string) {
+    return `${window.location.origin}/shared/digest/${encodeURIComponent(t)}`
+  }
+
+  async function handleEnsureShare(rotate = false) {
+    if (!id) return
+    setShareNote(null)
+    setShareBusy(true)
+    try {
+      const res = await createSavedDigestShare(apiBase, id, { rotate })
+      const url = publicUrlForToken(res.token)
+      await copyTextToClipboard(url)
+      setShareNote(rotate ? 'Новая ссылка скопирована в буфер обмена.' : 'Ссылка скопирована в буфер обмена.')
+      setDetail((d) => (d ? { ...d, public_share_active: true } : d))
+      void loadList()
+    } catch (e) {
+      setShareNote(e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e))
+    } finally {
+      setShareBusy(false)
+    }
+  }
+
+  async function handleRevokeShare() {
+    if (!id) return
+    setShareBusy(true)
+    setShareNote(null)
+    try {
+      await deleteSavedDigestShare(apiBase, id)
+      setShareNote('Публичная ссылка отозвана.')
+      setDetail((d) => (d ? { ...d, public_share_active: false } : d))
+      void loadList()
+    } catch (e) {
+      setShareNote(e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e))
+    } finally {
+      setShareBusy(false)
+    }
+  }
+
+  async function handleDownloadDocx() {
+    if (!id) return
+    setShareNote(null)
+    setDocxBusy(true)
+    try {
+      await downloadSavedDigestDocx(apiBase, id)
+      setShareNote('Файл .docx сохранён (или открыт загрузкой браузера).')
+    } catch (e) {
+      setShareNote(e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e))
+    } finally {
+      setDocxBusy(false)
+    }
+  }
+
   if (id) {
     return (
       <div className="mx-auto max-w-4xl space-y-8 pb-8">
@@ -112,15 +169,26 @@ export function SavedDigestsPage() {
             <Link to="/saved">← К списку</Link>
           </Button>
           {detail ? (
-            <Button
-              type="button"
-              variant="destructive"
-              size="sm"
-              disabled={deletingId === id}
-              onClick={() => void handleDelete(id)}
-            >
-              {deletingId === id ? 'Удаление…' : 'Удалить'}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={docxBusy}
+                onClick={() => void handleDownloadDocx()}
+              >
+                {docxBusy ? 'DOCX…' : 'Скачать DOCX'}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                disabled={deletingId === id}
+                onClick={() => void handleDelete(id)}
+              >
+                {deletingId === id ? 'Удаление…' : 'Удалить'}
+              </Button>
+            </div>
           ) : null}
         </div>
 
@@ -136,6 +204,53 @@ export function SavedDigestsPage() {
           </div>
         ) : null}
 
+        {detail ? (
+          <Card className="print:hidden border-border/80">
+            <CardHeader className="py-3">
+              <CardTitle className="text-base">Публичная ссылка</CardTitle>
+              <CardDescription>
+                По ссылке дайджест доступен без входа. Не используйте для конфиденциальных данных.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={shareBusy}
+                  onClick={() => void handleEnsureShare(false)}
+                >
+                  {detail.public_share_active ? 'Скопировать ссылку' : 'Включить и скопировать ссылку'}
+                </Button>
+                {detail.public_share_active ? (
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={shareBusy}
+                      onClick={() => void handleEnsureShare(true)}
+                    >
+                      Новый токен
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      disabled={shareBusy}
+                      onClick={() => void handleRevokeShare()}
+                    >
+                      Отозвать
+                    </Button>
+                  </>
+                ) : null}
+              </div>
+              {shareNote ? <p className="text-sm text-muted-foreground">{shareNote}</p> : null}
+            </CardContent>
+          </Card>
+        ) : null}
+
         <DigestResultView loading={loading} error={error} data={detail?.digest_response ?? undefined} />
       </div>
     )
@@ -149,11 +264,12 @@ export function SavedDigestsPage() {
           {
             title: 'Хранение',
             detail:
-              'Записи хранятся в той же базе, что и снимки трендов (SNAPSHOT_DATABASE_URL на сервере). После разового дайджеста нажмите «Сохранить» на странице дайджеста.',
+              'Записи хранятся на сервере вместе со снимками трендов. После разового дайджеста нажмите «Сохранить» на странице дайджеста.',
           },
           {
-            title: 'Просмотр и удаление',
-            detail: 'Откройте запись по ссылке или удалите ненужную. Экспорт в Markdown доступен внутри просмотра.',
+            title: 'Просмотр и ссылка',
+            detail:
+              'Экспорт и копирование — внутри записи. Опционально включите публичную ссылку для коллег без учётной записи.',
           },
         ]}
       />
@@ -162,8 +278,8 @@ export function SavedDigestsPage() {
         <CardHeader>
           <CardTitle className="text-xl">Список</CardTitle>
           <CardDescription className="text-pretty">
-            Сохранённые результаты POST /digests. Доступны всем сессиям с тем же пользователем (JWT) или общему
-            режиму без авторизации.
+            Сохранённые полные ответы разового дайджеста. Видны при входе под тем же пользователем; если вход
+            отключён на сервере — общий режим без разделения по людям.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -192,12 +308,19 @@ export function SavedDigestsPage() {
                 {items.map((row) => (
                   <TableRow key={row.id}>
                     <TableCell>
-                      <Link
-                        to={`/saved/${row.id}`}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {row.title}
-                      </Link>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                          to={`/saved/${row.id}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {row.title}
+                        </Link>
+                        {row.public_share_active ? (
+                          <Badge variant="outline" className="text-xs font-normal">
+                            ссылка
+                          </Badge>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-muted-foreground text-sm">
                       {formatWhen(row.created_at)}

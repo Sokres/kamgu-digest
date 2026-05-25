@@ -15,13 +15,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { DigestCorpusCharts } from '@/components/DigestCorpusCharts'
+import { PublicationYearChart } from '@/components/PublicationYearChart'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   copyTextToClipboard,
   digestBodyToMarkdown,
   downloadBlob,
   fullReportMarkdown,
+  publicationsToBibtex,
   publicationsToMarkdown,
+  publicationsToRis,
 } from '@/lib/digestExport'
 import type {
   ArticleCard,
@@ -163,6 +167,28 @@ function DigestExportBar({ data }: { data: DigestResponse | MonthlyDigestRespons
     void flash('Файл .txt сохранён')
   }
 
+  async function handleCopyBib() {
+    await copyTextToClipboard(publicationsToBibtex(data.publications_used))
+    void flash('BibTeX скопирован')
+  }
+
+  async function handleCopyRis() {
+    await copyTextToClipboard(publicationsToRis(data.publications_used))
+    void flash('RIS скопирован')
+  }
+
+  function downloadBib() {
+    downloadBlob('publications.bib', publicationsToBibtex(data.publications_used), 'text/plain;charset=utf-8')
+    void flash('Сохранён .bib')
+  }
+
+  function downloadRis() {
+    downloadBlob('publications.ris', publicationsToRis(data.publications_used), 'text/plain;charset=utf-8')
+    void flash('Сохранён .ris')
+  }
+
+  const hasPubs = data.publications_used.length > 0
+
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between print:hidden">
       <p className="text-xs font-medium text-muted-foreground">Экспорт для отчётов</p>
@@ -182,6 +208,22 @@ function DigestExportBar({ data }: { data: DigestResponse | MonthlyDigestRespons
         <Button type="button" variant="outline" size="sm" onClick={downloadTxt}>
           Скачать .txt
         </Button>
+        {hasPubs ? (
+          <>
+            <Button type="button" variant="outline" size="sm" onClick={() => void handleCopyBib()}>
+              Копировать BibTeX
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => void handleCopyRis()}>
+              Копировать RIS
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={downloadBib}>
+              Скачать .bib
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={downloadRis}>
+              Скачать .ris
+            </Button>
+          </>
+        ) : null}
       </div>
       {msg ? <span className="text-xs text-muted-foreground sm:ml-auto">{msg}</span> : null}
     </div>
@@ -395,6 +437,22 @@ export function DigestResultView(props: {
         <h3 className="text-lg font-heading font-semibold mb-3">Карточки</h3>
         <ArticleCardsList cards={data.article_cards} />
       </div>
+
+      {data.publications_used.length > 0 ? (
+        <div className="space-y-3">
+          <div>
+            <h3 className="text-lg font-heading font-semibold mb-1">Аналитика корпуса</h3>
+            <p className="mb-3 text-sm text-muted-foreground text-pretty max-w-3xl">
+              Распределения и сводки по работам, попавшим в дайджест: годы, цитирования, источники
+              {mode === 'peer_reviewed' ? ', концепты OpenAlex и открытый доступ' : ', домены URL для веб-сниппетов'}.
+            </p>
+          </div>
+          <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+            <PublicationYearChart publications={data.publications_used} />
+            <DigestCorpusCharts publications={data.publications_used} mode={mode} />
+          </div>
+        </div>
+      ) : null}
 
       <div>
         <h3 className="text-lg font-heading font-semibold mb-3">

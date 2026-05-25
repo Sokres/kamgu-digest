@@ -1,10 +1,11 @@
 from fastapi import APIRouter
 
-from app.api.routes import auth, digest_schedules, digests, documents, health, saved_digests, trends
+from app.api.routes import auth, digest_schedules, digests, documents, health, public_digest, saved_digests, trends
 
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
+api_router.include_router(public_digest.router)
 api_router.include_router(digest_schedules.router)
 api_router.include_router(digests.router)
 api_router.include_router(documents.router)

@@ -212,6 +212,7 @@ class SavedDigestListItem(BaseModel):
     digest_mode: DigestMode = "peer_reviewed"
     used_for_llm: int | None = None
     elapsed_seconds: float | None = None
+    public_share_active: bool = False
 
 
 class SavedDigestOut(BaseModel):
@@ -220,11 +221,26 @@ class SavedDigestOut(BaseModel):
     created_at: str
     digest_response: DigestResponse
     request_snapshot: DigestRequest | None = None
+    public_share_active: bool = False
 
 
 class SavedDigestCreated(BaseModel):
     id: str
     created_at: str
+
+
+class SavedDigestShareResponse(BaseModel):
+    token: str
+    public_path: str = Field(description="Путь API: GET /public/saved-digests/{token}")
+
+
+class DigestScheduleRunOut(BaseModel):
+    id: str
+    schedule_id: str
+    user_id: str
+    finished_at: str
+    status: str
+    message: str | None = None
 
 
 class SnapshotWorkRecord(BaseModel):
@@ -248,8 +264,8 @@ class MonthlyDigestRequest(BaseModel):
     и POST /digests/schedules), если на сервере один процесс uvicorn.
 
     Загруженные PDF (POST /documents/pdf) в этом запросе не поддерживаются: периодический
-    дайджест строится только из внешних источников (OpenAlex и т.д.). Отдельное хранилище
-    PDF по профилю может быть добавлено позже.
+    дайджест строится из внешних источников — OpenAlex/Semantic Scholar или веб-сниппеты
+    (Tavily), как у POST /digests.
     """
 
     profile_id: str = Field(..., min_length=1, max_length=128)
@@ -266,6 +282,18 @@ class MonthlyDigestRequest(BaseModel):
         le=60,
         description="Размер множества 'топ' для вошёл/вышел (ранги 1..K).",
     )
+    digest_mode: DigestMode = Field(
+        "peer_reviewed",
+        description="Как у POST /digests: peer_reviewed или web_snippets (Tavily).",
+    )
+    web_scholarly_sources_only: bool = Field(
+        True,
+        description="Для web_snippets: только научные домены (include_domains у Tavily).",
+    )
+    web_search_additional_terms: list[str] = Field(
+        default_factory=list,
+        description="Доп. ключи к запросу Tavily (web_snippets).",
+    )
     from_year: int | None = Field(None, description="Минимальный год публикации")
     to_year: int | None = Field(None, description="Максимальный год публикации")
     exclude_dois: list[str] = Field(default_factory=list)
@@ -275,7 +303,7 @@ class MonthlyDigestRequest(BaseModel):
     )
     fetch_oa_fulltext: bool = Field(
         False,
-        description="Как у POST /digests: при наличии DOI подтянуть OA PDF (Unpaywall) и извлечь текст для LLM.",
+        description="Только peer_reviewed: при наличии DOI подтянуть OA PDF (Unpaywall) для LLM. Для web_snippets игнорируется.",
     )
     deep_digest: bool = Field(
         False,
@@ -362,6 +390,11 @@ class PeriodicDigestScheduleParams(BaseModel):
         min_length=1,
         description="Как у POST /digests/periodic.",
     )
+    digest_mode: DigestMode = Field("peer_reviewed")
+    web_scholarly_sources_only: bool = True
+    web_search_additional_terms: list[str] = Field(default_factory=list)
+    fetch_oa_fulltext: bool = False
+    deep_digest: bool = False
     max_candidates: int = Field(100, ge=10, le=200)
     top_n_for_llm: int = Field(20, ge=3, le=40)
     trend_top_k: int = Field(20, ge=5, le=60)
@@ -388,6 +421,11 @@ class PeriodicDigestScheduleCreate(BaseModel):
     )
     enabled: bool = True
     topic_queries: list[str] = Field(..., min_length=1)
+    digest_mode: DigestMode = Field("peer_reviewed")
+    web_scholarly_sources_only: bool = True
+    web_search_additional_terms: list[str] = Field(default_factory=list)
+    fetch_oa_fulltext: bool = False
+    deep_digest: bool = False
     max_candidates: int = Field(100, ge=10, le=200)
     top_n_for_llm: int = Field(20, ge=3, le=40)
     trend_top_k: int = Field(20, ge=5, le=60)
@@ -409,6 +447,11 @@ class PeriodicDigestScheduleUpdate(BaseModel):
     cron_utc: str | None = None
     enabled: bool | None = None
     topic_queries: list[str] | None = Field(None, min_length=1)
+    digest_mode: DigestMode | None = None
+    web_scholarly_sources_only: bool | None = None
+    web_search_additional_terms: list[str] | None = None
+    fetch_oa_fulltext: bool | None = None
+    deep_digest: bool | None = None
     max_candidates: int | None = Field(None, ge=10, le=200)
     top_n_for_llm: int | None = Field(None, ge=3, le=40)
     trend_top_k: int | None = Field(None, ge=5, le=60)
@@ -433,6 +476,11 @@ class PeriodicDigestScheduleOut(BaseModel):
     cron_utc: str
     enabled: bool
     topic_queries: list[str]
+    digest_mode: DigestMode = "peer_reviewed"
+    web_scholarly_sources_only: bool = True
+    web_search_additional_terms: list[str] = Field(default_factory=list)
+    fetch_oa_fulltext: bool = False
+    deep_digest: bool = False
     max_candidates: int
     top_n_for_llm: int
     trend_top_k: int
@@ -459,13 +507,19 @@ class DigestSchedulesListResponse(BaseModel):
 
 
 class TrendProfileSummary(BaseModel):
-    """Сводка по profile_id из digest_snapshots + опциональная подпись."""
+    """Сводка по направлению (digest_profiles + опционально снимки)."""
 
     user_id: str = ""
     profile_id: str
-    snapshot_count: int
-    last_period: str
-    last_created_at: str
+    snapshot_count: int = 0
+    last_period: str | None = Field(
+        None,
+        description="Период последнего снимка; None, если снимков ещё не было.",
+    )
+    last_created_at: str | None = Field(
+        None,
+        description="Время создания последнего снимка.",
+    )
     topic_queries: list[str] = Field(default_factory=list)
     work_count_last: int = Field(
         0,
@@ -473,9 +527,23 @@ class TrendProfileSummary(BaseModel):
     )
     display_name: str | None = Field(
         None,
-        description="Человекочитаемое имя из trend_profile_labels.",
+        description="Человекочитаемое имя направления (digest_profiles).",
     )
     note: str = ""
+
+
+class DigestProfileCreate(BaseModel):
+    """POST /trends/profiles — создание направления."""
+
+    display_name: str = Field(..., min_length=1, max_length=160)
+    note: str = Field("", max_length=2000)
+
+
+class DigestProfileCreated(BaseModel):
+    profile_id: str
+    display_name: str
+    note: str = ""
+    created_at: str
 
 
 class TrendSeriesPoint(BaseModel):
@@ -528,11 +596,34 @@ class AuthLoginRequest(BaseModel):
         return v
 
 
+class AuthChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1, max_length=256)
+    new_password: str = Field(..., min_length=8, max_length=256)
+
+    @field_validator("current_password", "new_password")
+    @classmethod
+    def password_bcrypt_utf8_bytes_change(cls, v: str) -> str:
+        if len(v.encode("utf-8")) > 72:
+            raise ValueError(
+                "Пароль не длиннее 72 байт в UTF-8 (ограничение bcrypt). Укоротите пароль."
+            )
+        return v
+
+
 class AuthTokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    refresh_token: str
     user_id: str
     username: str
+
+
+class AuthRefreshRequest(BaseModel):
+    refresh_token: str = Field(..., min_length=16, max_length=2048)
+
+
+class AuthLogoutRequest(BaseModel):
+    refresh_token: str | None = Field(default=None, max_length=2048)
 
 
 class AuthMeResponse(BaseModel):

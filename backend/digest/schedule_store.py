@@ -57,6 +57,11 @@ def _row_to_out(
         cron_utc=cron_utc,
         enabled=enabled,
         topic_queries=p.topic_queries,
+        digest_mode=p.digest_mode,
+        web_scholarly_sources_only=p.web_scholarly_sources_only,
+        web_search_additional_terms=p.web_search_additional_terms,
+        fetch_oa_fulltext=p.fetch_oa_fulltext,
+        deep_digest=p.deep_digest,
         max_candidates=p.max_candidates,
         top_n_for_llm=p.top_n_for_llm,
         trend_top_k=p.trend_top_k,
@@ -133,6 +138,11 @@ def insert_schedule(
     now = _now_iso()
     params = PeriodicDigestScheduleParams(
         topic_queries=body.topic_queries,
+        digest_mode=body.digest_mode,
+        web_scholarly_sources_only=body.web_scholarly_sources_only,
+        web_search_additional_terms=body.web_search_additional_terms,
+        fetch_oa_fulltext=body.fetch_oa_fulltext,
+        deep_digest=body.deep_digest,
         max_candidates=body.max_candidates,
         top_n_for_llm=body.top_n_for_llm,
         trend_top_k=body.trend_top_k,
@@ -180,6 +190,21 @@ def update_schedule(
         return None
     params = PeriodicDigestScheduleParams(
         topic_queries=patch.topic_queries if patch.topic_queries is not None else cur.topic_queries,
+        digest_mode=patch.digest_mode if patch.digest_mode is not None else cur.digest_mode,
+        web_scholarly_sources_only=(
+            patch.web_scholarly_sources_only
+            if patch.web_scholarly_sources_only is not None
+            else cur.web_scholarly_sources_only
+        ),
+        web_search_additional_terms=(
+            patch.web_search_additional_terms
+            if patch.web_search_additional_terms is not None
+            else cur.web_search_additional_terms
+        ),
+        fetch_oa_fulltext=(
+            patch.fetch_oa_fulltext if patch.fetch_oa_fulltext is not None else cur.fetch_oa_fulltext
+        ),
+        deep_digest=patch.deep_digest if patch.deep_digest is not None else cur.deep_digest,
         max_candidates=patch.max_candidates if patch.max_candidates is not None else cur.max_candidates,
         top_n_for_llm=patch.top_n_for_llm if patch.top_n_for_llm is not None else cur.top_n_for_llm,
         trend_top_k=patch.trend_top_k if patch.trend_top_k is not None else cur.trend_top_k,

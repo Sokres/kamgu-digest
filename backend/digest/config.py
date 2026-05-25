@@ -102,9 +102,27 @@ class Settings(BaseSettings):
     auth_enabled: bool = False
     auth_jwt_secret: str = ""
     auth_jwt_expire_minutes: int = 60 * 24 * 7
+    # Если задано — срок жизни access JWT в минутах (короткий). Иначе используется auth_jwt_expire_minutes.
+    auth_access_token_expire_minutes: int | None = None
+    auth_refresh_token_expire_days: int = 30
     auth_registration_enabled: bool = True
     # Старые строки без владельца мигрируют с этим user_id; новые записи при выключенной авторизации используют то же значение.
     auth_legacy_user_id: str = "__legacy__"
+
+    # Опционально: SMTP-уведомления после запуска расписания (DIGEST_PERIODIC_SCHEDULER_ENABLED).
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
+    digest_notify_from_email: str = ""
+    """Кому отправлять (через запятую). Пусто — письма не отправляются."""
+    digest_notify_to_email: str = ""
+
+    """POST JSON на этот URL после завершения запуска по расписанию (успех или ошибка). Пусто — не вызывать."""
+    digest_schedule_webhook_url: str = ""
+    """Необязательный общий секрет в заголовке X-Webhook-Secret для вашего приёмника."""
+    digest_schedule_webhook_secret: str = ""
 
     def llm_api_key_resolved(self) -> str:
         a = (self.openai_api_key or "").strip()

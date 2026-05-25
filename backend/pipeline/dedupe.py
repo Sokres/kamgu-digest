@@ -4,13 +4,16 @@ from digest.models import PublicationInput
 
 
 def publication_dedupe_key(p: PublicationInput) -> str:
-    """Стабильный ключ для снимков и диффа (DOI / OpenAlex / заголовок)."""
+    """Стабильный ключ для снимков и диффа (DOI / OpenAlex / URL веб-сниппета / заголовок)."""
     nd = normalize_doi(p.doi)
     if nd:
         return f"doi:{nd}"
     if (p.openalex_work_id or "").strip():
         tail = (p.openalex_work_id or "").strip().rstrip("/").split("/")[-1]
         return f"oa:{tail.lower()}"
+    u = (p.url or "").strip()
+    if u and (p.source or "").strip().lower() == "web_snippet":
+        return f"url:{u}"
     return f"title:{normalize_title(p.title)}"
 
 

@@ -33,13 +33,24 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 curl -s http://localhost:8080/digests \
   -H "Content-Type: application/json" \
   -d '{
-    "topic_queries": ["quantum error correction", "квантовые коды"],
+    "topic_queries": ["research area", "область исследований"],
     "max_candidates": 60,
     "top_n_for_llm": 12,
     "from_year": 2020,
     "exclude_dois": []
   }'
 ```
+
+### Свой ключ LLM (BYOK) для `POST /digests` и `POST /digests/periodic`
+
+Вместо серверного `.env` клиент может передать **свой** ключ и параметры совместимого с OpenAI Chat Completions API (в т.ч. [OpenRouter](https://openrouter.ai/), OpenAI, DeepSeek и др.):
+
+- `X-Kamgu-Llm-Key` — обязателен для включения режима BYOK;
+- `X-Kamgu-Llm-Base-Url` — необязателен; если пусто и ключ вида `sk-or-v1-...`, подставляется `https://openrouter.ai/api/v1`, иначе используется `OPENAI_BASE_URL` из `.env` или URL по умолчанию SDK;
+- `X-Kamgu-Llm-Model` — необязателен; если пусто — `OPENAI_MODEL` с сервера;
+- `X-Kamgu-Llm-Json-Mode` — `true` / `false`; при отсутствии — как `OPENAI_RESPONSE_FORMAT_JSON` на сервере.
+
+Во фронте KamGU это настраивается в **Настройки → Нейросеть**: ключ хранится в `localStorage` браузера и добавляется к запросам автоматически.
 
 ### Режимы `POST /digests`
 
@@ -57,7 +68,8 @@ curl -s http://localhost:8080/digests \
 Полный ответ разового `POST /digests` можно **сохранить в базу** (та же `SNAPSHOT_DATABASE_URL`, что и для снимков трендов): таблица `saved_digests`, изоляция по `user_id` (JWT при `AUTH_ENABLED` или `AUTH_LEGACY_USER_ID` без авторизации).
 
 - `POST /saved-digests` — тело: `title`, `digest_response` (как в ответе `/digests`), опционально `request_snapshot` (параметры запроса для справки). Лимит размера: `SAVED_DIGEST_MAX_PAYLOAD_BYTES` (по умолчанию 4 МБ).
-- `GET /saved-digests` — список метаданных; `GET /saved-digests/{id}` — полная запись; `DELETE /saved-digests/{id}` — удаление своей записи.
+- `GET /saved-digests` — список метаданных; `GET /saved-digests/{id}` — полная запись; `DELETE /saved-digests/{id}` — удаление своей записи; **`GET /saved-digests/{id}/export/docx`** — скачать отчёт в Word (те же права, что на чтение записи).
+- Публичная ссылка (без JWT): `POST /saved-digests/{id}/share` — выдать/вернуть токен (query `rotate=true` — сменить токен); `DELETE /saved-digests/{id}/share` — отозвать. Чтение: `GET /public/saved-digests/{token}`.
 
 Во фронте KamGU: раздел **«Сохранённые»** и кнопка «Сохранить в архив» на странице дайджеста после успешного ответа.
 
@@ -68,6 +80,8 @@ curl -s http://localhost:8080/digests \
 - Первый запуск по `profile_id` даёт «базовую линию» без сравнения.
 - **Популярность** здесь = изменение `cited_by_count` и ранга внутри вашей выборки, не абсолютный мировой рейтинг.
 - Если задан `MONTHLY_DIGEST_CRON_SECRET`, к запросу и к **`/digests/schedules`** нужен заголовок `X-Internal-Key` с тем же значением.
+- Журнал последних запусков по расписанию: **`GET /digests/schedules/{schedule_id}/runs?limit=50`** (те же заголовки авторизации, что и для списка расписаний).
+- После каждого срабатывания встроенного планировщика пишется строка в таблицу `digest_schedule_runs`, опционально высылается письмо (**`SMTP_HOST`**, **`DIGEST_NOTIFY_TO_EMAIL`**) и опционально выполняется **HTTP POST** на **`DIGEST_SCHEDULE_WEBHOOK_URL`** с телом JSON о статусе запуска (см. `.env.example`).
 
 Пример:
 
@@ -76,8 +90,8 @@ curl -s http://localhost:8080/digests/periodic \
   -H "Content-Type: application/json" \
   -H "X-Internal-Key: your-secret-if-set" \
   -d '{
-    "profile_id": "energy",
-    "topic_queries": ["renewable energy grid", "энергетика ВИЭ"],
+    "profile_id": "my_profile",
+    "topic_queries": ["topic line 1", "строка темы 2"],
     "max_candidates": 60,
     "top_n_for_llm": 12,
     "trend_top_k": 15,
@@ -159,30 +173,30 @@ gcloud run deploy digest-agent \
 
 ## Переменные окружения
 
-| Переменная | Назначение |
-|------------|------------|
-| `OPENAI_API_KEY` | Ключ API (обязательно для `/digests`; для OpenRouter — их ключ) |
-| `OPENAI_BASE_URL` | Например `https://openrouter.ai/api/v1` или OpenAI/Azure |
-| `OPENAI_MODEL` | ID модели у провайдера (по умолчанию в коде `gpt-4o-mini`) |
-| `OPENAI_RESPONSE_FORMAT_JSON` | `true`/`false` — `json_object` у OpenAI; у OpenRouter `:free` обычно `false` |
-| `OPENROUTER_HTTP_REFERER` | Опционально, URL приложения для OpenRouter |
-| `OPENROUTER_APP_TITLE` | Опционально, название для OpenRouter (по умолчанию KamGU Research Digest) |
-| `LLM_MAX_RETRIES` | Число попыток при 429 у LLM (по умолчанию 8) |
-| `LLM_RETRY_BASE_SECONDS` | База экспоненциальной паузы между попытками (по умолчанию 4) |
-| `OPENALEX_MAILTO` | Email в User-Agent для OpenAlex и общего HTTP-клиента |
-| `HTTP_USER_AGENT` | Явный User-Agent (если не задан — из `OPENALEX_MAILTO` или дефолт; помогает при **403** у SS) |
-| `HTTP_TIMEOUT_SECONDS` | Таймаут HTTP к источникам |
-| `HTTP_MAX_RETRIES` | Повторы при 429/5xx и сетевых сбоях (по умолчанию 5) |
-| `SOURCE_STAGGER_SECONDS` | Пауза между OpenAlex и Semantic Scholar (по умолчанию 1.5) |
-| `SEMANTIC_SCHOLAR_PAGE_DELAY_SECONDS` | Пауза перед 2-й и далее страницей SS (по умолчанию 5) |
-| `SEMANTIC_SCHOLAR_API_KEY` | Ключ [Semantic Scholar API](https://www.semanticscholar.org/product/api) — выше лимиты |
-| `SEMANTIC_SCHOLAR_ENABLED` | `true`/`false` — по умолчанию `false`; при `true` добавляется Semantic Scholar (половина `max_candidates`) |
-| `SEMANTIC_SCHOLAR_MAX_RETRIES` | Ретраи для SS при 429 (по умолчанию 12; паузы между ними длинные) |
-| `LOG_LEVEL` | `INFO`, `DEBUG`, … |
-| `CORS_ORIGINS` | Origins для браузера (через запятую). Пусто — без CORS. `*` — любой origin (без credentials). По умолчанию в коде — localhost:5173 |
-| `SNAPSHOT_DATABASE_URL` | Снимки: `postgresql://user:pass@host:5432/dbname` (по умолчанию локальный Postgres из `docker compose`) или `sqlite:///./snapshots.db` без Docker |
-| `MONTHLY_DIGEST_CRON_SECRET` | Если не пусто — обязателен заголовок `X-Internal-Key` для `/digests/periodic` и `/digests/monthly` |
-| `DIGEST_RATE_LIMIT_PER_MINUTE` | Лимит запросов к `POST /digests` с одного IP (скользящая минута, `0` = выкл.) |
+| Переменная                            | Назначение                                                                                                                                        |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`                      | Ключ API (обязательно для `/digests`; для OpenRouter — их ключ)                                                                                   |
+| `OPENAI_BASE_URL`                     | Например `https://openrouter.ai/api/v1` или OpenAI/Azure                                                                                          |
+| `OPENAI_MODEL`                        | ID модели у провайдера (по умолчанию в коде `gpt-4o-mini`)                                                                                        |
+| `OPENAI_RESPONSE_FORMAT_JSON`         | `true`/`false` — `json_object` у OpenAI; у OpenRouter `:free` обычно `false`                                                                      |
+| `OPENROUTER_HTTP_REFERER`             | Опционально, URL приложения для OpenRouter                                                                                                        |
+| `OPENROUTER_APP_TITLE`                | Опционально, название для OpenRouter (по умолчанию KamGU Research Digest)                                                                         |
+| `LLM_MAX_RETRIES`                     | Число попыток при 429 у LLM (по умолчанию 8)                                                                                                      |
+| `LLM_RETRY_BASE_SECONDS`              | База экспоненциальной паузы между попытками (по умолчанию 4)                                                                                      |
+| `OPENALEX_MAILTO`                     | Email в User-Agent для OpenAlex и общего HTTP-клиента                                                                                             |
+| `HTTP_USER_AGENT`                     | Явный User-Agent (если не задан — из `OPENALEX_MAILTO` или дефолт; помогает при **403** у SS)                                                     |
+| `HTTP_TIMEOUT_SECONDS`                | Таймаут HTTP к источникам                                                                                                                         |
+| `HTTP_MAX_RETRIES`                    | Повторы при 429/5xx и сетевых сбоях (по умолчанию 5)                                                                                              |
+| `SOURCE_STAGGER_SECONDS`              | Пауза между OpenAlex и Semantic Scholar (по умолчанию 1.5)                                                                                        |
+| `SEMANTIC_SCHOLAR_PAGE_DELAY_SECONDS` | Пауза перед 2-й и далее страницей SS (по умолчанию 5)                                                                                             |
+| `SEMANTIC_SCHOLAR_API_KEY`            | Ключ [Semantic Scholar API](https://www.semanticscholar.org/product/api) — выше лимиты                                                            |
+| `SEMANTIC_SCHOLAR_ENABLED`            | `true`/`false` — по умолчанию `false`; при `true` добавляется Semantic Scholar (половина `max_candidates`)                                        |
+| `SEMANTIC_SCHOLAR_MAX_RETRIES`        | Ретраи для SS при 429 (по умолчанию 12; паузы между ними длинные)                                                                                 |
+| `LOG_LEVEL`                           | `INFO`, `DEBUG`, …                                                                                                                                |
+| `CORS_ORIGINS`                        | Origins для браузера (через запятую). Пусто — без CORS. `*` — любой origin (без credentials). По умолчанию в коде — localhost:5173                |
+| `SNAPSHOT_DATABASE_URL`               | Снимки: `postgresql://user:pass@host:5432/dbname` (по умолчанию локальный Postgres из `docker compose`) или `sqlite:///./snapshots.db` без Docker |
+| `MONTHLY_DIGEST_CRON_SECRET`          | Если не пусто — обязателен заголовок `X-Internal-Key` для `/digests/periodic` и `/digests/monthly`                                                |
+| `DIGEST_RATE_LIMIT_PER_MINUTE`        | Лимит запросов к `POST /digests` с одного IP (скользящая минута, `0` = выкл.)                                                                     |
 
 ## Структура проекта
 

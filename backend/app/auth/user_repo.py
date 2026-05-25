@@ -113,3 +113,23 @@ def get_user_by_id(conn: sqlite3.Connection | PgConnection, user_id: str) -> Aut
         password_hash=_coerce_text_cell(phash),
         created_at=_coerce_text_cell(cat),
     )
+
+
+def update_user_password(
+    conn: sqlite3.Connection | PgConnection,
+    user_id: str,
+    new_password: str,
+) -> bool:
+    """Обновить password_hash. False — пользователь не найден."""
+    uid = user_id.strip()
+    if not uid:
+        return False
+    h = hash_password(new_password)
+    backend = _backend_of_conn(conn)
+    ph = _ph(backend)
+    sql = f"UPDATE auth_users SET password_hash = {ph} WHERE id = {ph}"
+    cur = conn.execute(sql, (h, uid))
+    rc = getattr(cur, "rowcount", None)
+    if rc is None:
+        return False
+    return int(rc) > 0
