@@ -122,7 +122,8 @@ function DigestDisclaimer() {
     <Alert className="border-amber-200/80 bg-amber-50/80 dark:border-amber-900/50 dark:bg-amber-950/30">
       <AlertTitle className="text-amber-950 dark:text-amber-100">Ограничения и справочный характер</AlertTitle>
       <AlertDescription className="text-pretty text-amber-950/90 dark:text-amber-50/90">
-        Полнота выборки зависит от открытых API (OpenAlex, Semantic Scholar и др.) и их лимитов; сервис не
+        Полнота выборки зависит от открытых каталогов и источников метаданных (OpenAlex, Semantic Scholar и др.) и их
+        лимитов; сервис не
         гарантирует исчерпывающий охват всех журналов. Текст дайджеста сформирован языковой моделью и носит
         справочный характер: проверяйте формулировки по первоисточникам перед цитированием в отчётности.
       </AlertDescription>

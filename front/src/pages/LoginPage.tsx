@@ -3,14 +3,13 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { ApiError, authLogin, authRegister } from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
-import { getApiBaseUrl, setApiBaseUrl } from '@/lib/settings'
+import { applyThemeFromPreference, getApiBaseUrl, getDefaultApiBaseUrl, setApiBaseUrl } from '@/lib/settings'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { applyThemeFromPreference } from '@/lib/settings'
 
 type LocationState = { from?: { pathname: string } }
 
@@ -36,7 +35,14 @@ export function LoginPage() {
   const apiBase = getApiBaseUrl()
 
   function applyApiUrl() {
-    const t = apiEdit.trim().replace(/\/+$/, '') || 'http://localhost:8080'
+    let t = apiEdit.trim().replace(/\/+$/, '')
+    if (!t) {
+      const fromEnv = import.meta.env.VITE_API_BASE_URL ? String(import.meta.env.VITE_API_BASE_URL).trim() : ''
+      t =
+        fromEnv.replace(/\/+$/, '') ||
+        (typeof window !== 'undefined' ? window.location.origin : '') ||
+        getDefaultApiBaseUrl()
+    }
     setApiBaseUrl(t)
     window.location.reload()
   }
@@ -79,13 +85,11 @@ export function LoginPage() {
         <Card className="w-full max-w-md shadow-lg">
           <CardHeader>
             <CardTitle>Вход недоступен</CardTitle>
-            <CardDescription>
-              На сервере <span className="font-mono text-xs">{apiBase}</span> вход в приложение отключён.
-            </CardDescription>
+            <CardDescription>На выбранном сервисе вход в приложение отключён.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Включение входа и секреты для сессий задаёт администратор в конфигурации API, затем сервис нужно перезапустить.
+              Включение входа задаёт администратор конфигурации сервера; после изменений сервис перезапускают.
             </p>
             <Button asChild className="w-full">
               <Link to="/">На главную</Link>
@@ -109,18 +113,16 @@ export function LoginPage() {
       <Card className="w-full max-w-md border-border/80 shadow-xl">
         <CardHeader className="space-y-1 pb-2">
           <CardTitle className="text-xl">Аккаунт</CardTitle>
-          <CardDescription className="font-mono text-xs">
-            API: <span className="text-foreground">{apiBase}</span>
-          </CardDescription>
+          <CardDescription className="text-xs">Вход в вашу область данных на этом сервисе.</CardDescription>
         </CardHeader>
         <CardContent>
           <details className="mb-4 rounded-lg border border-border/60 bg-muted/20 p-3">
             <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-              Другой адрес API (редко нужно)
+              Другой адрес сервиса (редко нужно)
             </summary>
             <div className="mt-3 space-y-2">
               <Label htmlFor="login-api" className="text-xs text-muted-foreground">
-                Укажите URL бэкенда и нажмите «Применить» (страница перезагрузится)
+                Полный адрес без завершающего слэша; «Применить» перезагрузит страницу.
               </Label>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
@@ -128,7 +130,7 @@ export function LoginPage() {
                   className="font-mono text-xs"
                   value={apiEdit}
                   onChange={(e) => setApiEdit(e.target.value)}
-                  placeholder={apiBase}
+                  placeholder="https://…"
                   autoComplete="off"
                 />
                 <Button type="button" variant="secondary" size="sm" className="shrink-0" onClick={applyApiUrl}>
@@ -143,7 +145,7 @@ export function LoginPage() {
             <Tabs defaultValue="login" className="w-full">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="login">Вход</TabsTrigger>
-                <TabsTrigger value="register">Регистрация</TabsTrigger>
+                <TabsTrigger value="register">Новый аккаунт</TabsTrigger>
               </TabsList>
               <TabsContent value="login" className="mt-4 space-y-4">
                 <form onSubmit={submitLogin} className="space-y-4">
@@ -242,14 +244,14 @@ export function LoginPage() {
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               ) : null}
-              <p className="text-xs text-muted-foreground">Регистрация на сервере отключена — только вход существующих пользователей.</p>
+              <p className="text-xs text-muted-foreground">Создание новых учётных записей на сервере отключено.</p>
               <Button type="submit" className="w-full" disabled={busy}>
                 {busy ? 'Вход…' : 'Войти'}
               </Button>
             </form>
           )}
           <p className="mt-6 border-t border-border pt-4 text-center text-xs text-muted-foreground">
-            Сессия хранится в этом браузере. После входа адрес API можно сменить в настройках.
+            Сессия хранится в этом браузере. При необходимости адрес сервиса меняется в настройках.
           </p>
         </CardContent>
       </Card>

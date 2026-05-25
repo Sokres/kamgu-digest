@@ -52,8 +52,8 @@ def create_app() -> FastAPI:
             "отдельно веб-обзор по сниппетам (Tavily). "
             "Двуязычный дайджест через LLM. "
             "Периодический режим со снимками: POST /digests/periodic (алиас /digests/monthly); "
-            "расписание в API: GET/POST/PATCH/DELETE /digests/schedules при DIGEST_PERIODIC_SCHEDULER_ENABLED. "
-            "Опционально AUTH_ENABLED + JWT: /auth/login, /auth/register; данные пользователей в SNAPSHOT_DATABASE_URL."
+            "расписание: GET/POST/PATCH/DELETE /digests/schedules при DIGEST_PERIODIC_SCHEDULER_ENABLED. "
+            "Опционально AUTH_ENABLED и JWT-сессии: /auth/login; данные в SNAPSHOT_DATABASE_URL."
         ),
     )
     app.add_middleware(RequestIdMiddleware)

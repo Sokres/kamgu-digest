@@ -23,7 +23,7 @@ export PYTHONPATH="$(pwd)"
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
-- В `.env.example` **Semantic Scholar отключён** (`SEMANTIC_SCHOLAR_ENABLED=false`): кандидаты только из OpenAlex, без 429 от SS. Включите `true`, если нужен второй источник. **CORE** (`CORE_ENABLED`, `CORE_API_KEY` с [core.ac.uk](https://core.ac.uk/api-keys/register)) — третий источник по открытому доступу; между запросами к CORE соблюдается пауза (`CORE_REQUEST_DELAY_SECONDS`). **Crossref** включён по умолчанию (`CROSSREF_ENRICHMENT_ENABLED`) — до `CROSSREF_MAX_UNIQUE_DOIS` уникальных DOI за запрос.
+- В `.env.example` **Semantic Scholar отключён** (`SEMANTIC_SCHOLAR_ENABLED=false`): кандидаты только из OpenAlex, без 429 от SS. Включите `true`, если нужен второй источник. **CORE** (`CORE_ENABLED`, ключ `CORE_API_KEY` через [CORE](https://core.ac.uk/)) — третий источник по открытому доступу; между запросами к CORE соблюдается пауза (`CORE_REQUEST_DELAY_SECONDS`). **Crossref** включён по умолчанию (`CROSSREF_ENRICHMENT_ENABLED`) — до `CROSSREF_MAX_UNIQUE_DOIS` уникальных DOI за запрос.
 - Проверка: `curl -s http://localhost:8080/health` (liveness). Готовность БД снимков: `curl -s http://localhost:8080/health/ready`
 - Тесты: `PYTHONPATH=. pytest tests/`
 - Браузерный фронт (Vite на порту 5173): по умолчанию включён **CORS** для `http://localhost:5173` и `http://127.0.0.1:5173`. Задайте `CORS_ORIGINS` (через запятую) или оставьте пустым, чтобы отключить middleware. Готовый UI: каталог [`../front`](../front/README.md) (`npm run dev` в `front` после запуска API).

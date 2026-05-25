@@ -125,7 +125,7 @@ python3 deploy/snapshot_dsn.py
 docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 ```
 
-Проверка: `curl -s http://127.0.0.1:8080/health` на сервере.
+Проверка: с сервера выполните `curl -s http://127.0.0.1:<порт>/health`, подставив внутренний порт публикации API из `docker-compose.prod.yml`.
 
 ## 4. Reverse proxy и TLS
 
@@ -134,7 +134,7 @@ docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 - [Caddyfile.example](Caddyfile.example)
 - [nginx.example.conf](nginx.example.conf)
 
-На том же хосте API слушает `127.0.0.1:8080` (см. `docker-compose.prod.yml`). Фронт — статика после `npm run build` в каталоге `front/dist` (укажите путь в конфиге прокси).
+На том же хосте бэкенд слушает loopback; порт и привязка заданы в `docker-compose.prod.yml`. Фронт — статика после `npm run build` в каталоге `front/dist` (укажите путь в конфиге прокси).
 
 ### Как посмотреть конфиг **Caddy** на сервере
 

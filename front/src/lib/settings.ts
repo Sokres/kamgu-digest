@@ -96,7 +96,7 @@ export const LLM_PRESET_OPTIONS: LlmPresetOption[] = [
     baseUrl: 'https://api.groq.com/openai/v1',
     model: 'llama-3.3-70b-versatile',
     pricing: 'free_quota',
-    description: 'Ключ: console.groq.com. Низкая задержка; проверьте лимиты модели.',
+    description: 'Низкая задержка; проверьте лимиты тарифа.',
   },
   {
     id: 'groq_llama31_8b',
@@ -104,7 +104,7 @@ export const LLM_PRESET_OPTIONS: LlmPresetOption[] = [
     baseUrl: 'https://api.groq.com/openai/v1',
     model: 'llama-3.1-8b-instant',
     pricing: 'free_quota',
-    description: 'Быстрая компактная модель на Groq; тариф и лимиты — в консоли Groq.',
+    description: 'Быстрая компактная модель на Groq.',
   },
   {
     id: 'groq_gpt_oss_120b',
@@ -128,7 +128,7 @@ export const LLM_PRESET_OPTIONS: LlmPresetOption[] = [
     baseUrl: 'https://api.groq.com/openai/v1',
     model: 'qwen/qwen3-32b',
     pricing: 'free_quota',
-    description: 'Модель в превью на Groq; см. список моделей в документации.',
+    description: 'Модель в режиме предпросмотра; действуют ограничения доступности.',
   },
   {
     id: 'mistral_small',
@@ -150,7 +150,7 @@ export const LLM_PRESET_OPTIONS: LlmPresetOption[] = [
     baseUrl: 'https://api.x.ai/v1',
     model: 'grok-2-latest',
     pricing: 'paid',
-    description: 'OpenAI-совместимый API на api.x.ai.',
+    description: 'OpenAI-совместимый endpoint на домене провайдера.',
   },
   {
     id: 'ollama_local',
@@ -158,16 +158,16 @@ export const LLM_PRESET_OPTIONS: LlmPresetOption[] = [
     baseUrl: 'http://127.0.0.1:11434/v1',
     model: 'llama3.2',
     pricing: 'free_local',
-    description: 'Запущенный Ollama на этой машине; при доступе с другого хоста поменяйте Base URL.',
+    description: 'Локальный вывод; при необходимости укажите другой базовый адрес.',
   },
   {
     id: 'gemini_google_flash',
-    label: 'Google AI Studio — Gemini 2.0 Flash (OpenAI API)',
+    label: 'Google — Gemini 2.0 Flash (совместимый формат)',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/',
     model: 'gemini-2.0-flash',
     pricing: 'free_quota',
     description:
-      'Ключ в Google AI Studio (aistudio.google.com/apikey). Бесплатная квота с лимитами — см. ai.google.dev/pricing.',
+      'Укажите свой ключ провайдера и учитывайте квоты; при ошибках JSON попробуйте выключить JSON-режим.',
   },
   {
     id: 'or_free_router',
@@ -176,7 +176,7 @@ export const LLM_PRESET_OPTIONS: LlmPresetOption[] = [
     model: 'openrouter/free',
     pricing: 'free_quota',
     description:
-      'OpenRouter сам подбирает доступную :free модель под запрос (лимиты у провайдера). Ключ: openrouter.ai/keys.',
+      'OpenRouter сам подбирает доступную бесплатную модель в рамках вашего ключа и лимитов провайдера.',
   },
   {
     id: 'or_llama33_70b_free',
@@ -280,17 +280,17 @@ export const LLM_PRESET_OPTIONS: LlmPresetOption[] = [
 
 /** Текст подсказки про тарифы в настройках (общий для блока LLM). */
 export const LLM_PRESET_PRICING_LEGEND =
-  'Бесплатно — без оплаты API (локально). Бесплатный тариф — регистрация у провайдера и квота без оплаты с вашей карты (есть лимиты). Платно — списание по тарифу провайдера при наличии баланса/подписки. На OpenRouter есть суффикс :free и роутер openrouter/free (см. пресеты ниже); другие ID из каталога можно ввести вручную.'
+  'Бесплатно — без оплаты к модели (локально на вашей стороне). Бесплатный тариф — типичные квоты без списания по вашей карте зависят от провайдера. Платно — по условиям тарифа при наличии баланса или подписки. У части моделей есть суффикс :free на OpenRouter; произвольный идентификатор можно задать в своём пресете.'
 
 function trimBase(url: string): string {
   return url.trim().replace(/\/+$/, '')
 }
 
 /**
- * URL API по умолчанию, если в localStorage ничего не сохранено:
- * - VITE_API_BASE_URL из сборки (если задан);
- * - в dev (Vite) — обычно бэкенд на :8080;
- * - в production — тот же origin, что и у страницы (типичный деплой: nginx отдаёт SPA и проксирует API на тот же хост).
+ * URL сервиса по умолчанию, если в localStorage ничего не сохранено:
+ * переменная сборки VITE_API_BASE_URL;
+ * в dev — локальный хост для связки с отдельным процессом сервера (можно переопределить);
+ * в продакшене — обычно тот же origin, что у страницы при обратном прокси.
  */
 export function getDefaultApiBaseUrl(): string {
   const env = import.meta.env.VITE_API_BASE_URL

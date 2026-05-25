@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     semantic_scholar_max_retries: int = 12
     openalex_mailto: str | None = None
 
-    # CORE API v3: https://api.core.ac.uk/docs/v3 — ключ https://core.ac.uk/api-keys/register
+    # CORE REST v3: https://api.core.ac.uk/docs/v3; ключ задаётся в кабинете CORE.
     core_api_key: str = ""
     core_enabled: bool = False
     # Квота batch /search: ~1 запрос / 10 с — пауза между страницами и перед первым запросом после других источников.

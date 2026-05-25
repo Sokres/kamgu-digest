@@ -27,6 +27,7 @@ import {
   applyThemeFromPreference,
   clearLlmClientOverride,
   clearRefreshToken,
+  getDefaultApiBaseUrl,
   getApiBaseUrl,
   getLlmClientApiKey,
   getLlmClientBaseUrl,
@@ -173,7 +174,7 @@ export function SettingsSheet(props: {
   }
 
   function save() {
-    const trimmed = url.trim().replace(/\/+$/, "") || "http://localhost:8080";
+    const trimmed = url.trim().replace(/\/+$/, "") || getDefaultApiBaseUrl();
     setApiBaseUrl(trimmed);
     setMonthlyInternalKey(monthlyKey);
     setThemePreference(theme);
@@ -197,19 +198,19 @@ export function SettingsSheet(props: {
         <SheetHeader className="shrink-0 space-y-2 border-b border-border/80 px-6 py-5">
           <SheetTitle>Настройки</SheetTitle>
           <SheetDescription className="text-pretty">
-            Адрес API, при необходимости — сервисный ключ для автоматических запусков, свой ключ нейросети (BYOK) и
-            пресет модели. Вход в аккаунт — на странице «Вход».
+            Адрес сервиса, при необходимости — ключ для фоновых задач, свой ключ нейросети и выбор модели. Вход —
+            на странице «Вход».
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5">
           <div className="flex flex-col gap-6">
             <div className="space-y-2">
-              <Label htmlFor="api-url">API base URL</Label>
+              <Label htmlFor="api-url">Адрес сервиса</Label>
               <Input
                 id="api-url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="http://localhost:8080"
+                placeholder="https://…"
                 autoComplete="off"
               />
             </div>
@@ -286,7 +287,7 @@ export function SettingsSheet(props: {
               {llmPreset !== "server" ? (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="llm-key">API-ключ</Label>
+                    <Label htmlFor="llm-key">Ключ доступа</Label>
                     <Input
                       id="llm-key"
                       type="password"
@@ -297,14 +298,12 @@ export function SettingsSheet(props: {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="llm-base">
-                      Base URL API (необязательно для sk-or-v1 на OpenRouter)
-                    </Label>
+                    <Label htmlFor="llm-base">Базовый URL (необязательно)</Label>
                     <Input
                       id="llm-base"
                       value={llmBase}
                       onChange={(e) => setLlmBase(e.target.value)}
-                      placeholder="https://openrouter.ai/api/v1"
+                      placeholder="https://…"
                       autoComplete="off"
                     />
                   </div>

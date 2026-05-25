@@ -51,11 +51,11 @@ def auth_status() -> AuthStatusResponse:
 @router.post("/auth/register", response_model=AuthTokenResponse)
 def auth_register(body: AuthRegisterRequest) -> AuthTokenResponse:
     if not settings.auth_enabled:
-        raise HTTPException(status_code=404, detail="Регистрация отключена (AUTH_ENABLED=false).")
+        raise HTTPException(status_code=404, detail="Создание учётных записей отключено (AUTH_ENABLED=false).")
     if not (settings.auth_jwt_secret or "").strip():
         raise HTTPException(status_code=503, detail="Задайте AUTH_JWT_SECRET в .env.")
     if not settings.auth_registration_enabled:
-        raise HTTPException(status_code=403, detail="Регистрация закрыта (AUTH_REGISTRATION_ENABLED=false).")
+        raise HTTPException(status_code=403, detail="Новые учётные записи недоступны (AUTH_REGISTRATION_ENABLED=false).")
     uname = body.username.strip().lower()
     try:
         with snapshot_connection(settings.snapshot_database_url) as conn:

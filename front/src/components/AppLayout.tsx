@@ -68,14 +68,14 @@ function HealthBadge({ apiBase }: { apiBase: string }) {
   if (healthOk === null) {
     return (
       <Badge variant="secondary" className="font-normal">
-        API…
+        Сервис…
       </Badge>
     )
   }
   if (healthOk) {
     return (
       <Badge variant="default" className="border-0 bg-emerald-600/90 font-normal text-white hover:bg-emerald-600">
-        API OK
+        Связь OK
       </Badge>
     )
   }
