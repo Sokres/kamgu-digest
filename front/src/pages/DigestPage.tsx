@@ -1,22 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useOutletContext } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
+import { Link, useOutletContext, useSearchParams } from 'react-router-dom'
 
-import { DigestPresetsBar } from '@/components/DigestPresetsBar'
+import { DigestOnceExtras } from '@/components/digest/DigestOnceExtras'
+import { DigestSchedulePanel } from '@/components/digest/DigestSchedulePanel'
+import { DigestSharedParams } from '@/components/digest/DigestSharedParams'
+import { DigestSnapshotPanel } from '@/components/digest/DigestSnapshotPanel'
 import { DigestResultView } from '@/components/DigestResultView'
 import { PageOnboarding } from '@/components/PageOnboarding'
+import { StructuredDeltaView } from '@/components/StructuredDeltaView'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   Sheet,
   SheetContent,
@@ -25,180 +18,72 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
-import { ApiError, createDigest, saveDigest, uploadPdfDocument } from '@/lib/api'
-import type { DigestFormPreset } from '@/lib/digestPresets'
-import type { DigestMode, DigestRequest, DigestResponse } from '@/types/api'
-
-function parseYear(raw: string): number | null {
-  const t = raw.trim()
-  if (!t) return null
-  const n = Number.parseInt(t, 10)
-  if (!Number.isFinite(n) || n <= 0) return null
-  return n
-}
-
-function parseDois(text: string): string[] {
-  return text
-    .split(/[\n,;]+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-}
-
-function parseSourceIds(text: string): string[] {
-  return text
-    .split(/[\n,;]+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-}
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { useDigestFormState } from '@/hooks/useDigestFormState'
+import { ApiError, fetchTrendProfiles, saveDigest } from '@/lib/api'
+import { DIGEST_TABS, parseDigestTab, type DigestTabId } from '@/lib/digestTabs'
+import { getMonthlyInternalKey } from '@/lib/settings'
+import type { DigestRequest, DigestResponse, MonthlyDigestResponse, TrendProfileSummary } from '@/types/api'
 
 export function DigestPage() {
   const { apiBase } = useOutletContext<{ apiBase: string }>()
-  const [topics, setTopics] = useState<string[]>([''])
-  const [digestMode, setDigestMode] = useState<DigestMode>('peer_reviewed')
-  const [peerReviewedOnly, setPeerReviewedOnly] = useState(true)
-  const [openalexConceptId, setOpenalexConceptId] = useState('')
-  const [openalexSourceIds, setOpenalexSourceIds] = useState('')
-  const [maxCandidates, setMaxCandidates] = useState('100')
-  const [topN, setTopN] = useState('20')
-  const [fromYear, setFromYear] = useState('')
-  const [toYear, setToYear] = useState('')
-  const [excludeDois, setExcludeDois] = useState('')
-  const [webScholarlyOnly, setWebScholarlyOnly] = useState(true)
-  const [webExtraTerms, setWebExtraTerms] = useState('')
-  const [fetchOaFulltext, setFetchOaFulltext] = useState(false)
-  const [deepDigest, setDeepDigest] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = parseDigestTab(searchParams.get('tab'))
+  const form = useDigestFormState()
 
-  const [pdfAttachments, setPdfAttachments] = useState<{ id: string; name: string }[]>([])
-  const [pdfUploading, setPdfUploading] = useState(false)
-  const pdfInputRef = useRef<HTMLInputElement>(null)
+  const [trendProfiles, setTrendProfiles] = useState<TrendProfileSummary[]>([])
+  const [profilesLoading, setProfilesLoading] = useState(false)
 
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [data, setData] = useState<DigestResponse | null>(null)
+  const [onceLoading, setOnceLoading] = useState(false)
+  const [onceData, setOnceData] = useState<DigestResponse | null>(null)
+  const [onceError, setOnceError] = useState<string | null>(null)
   const [lastRequestSnapshot, setLastRequestSnapshot] = useState<DigestRequest | null>(null)
+
+  const [snapLoading, setSnapLoading] = useState(false)
+  const [snapData, setSnapData] = useState<MonthlyDigestResponse | null>(null)
+  const [snapError, setSnapError] = useState<string | null>(null)
+
   const [saveOpen, setSaveOpen] = useState(false)
   const [saveTitle, setSaveTitle] = useState('')
   const [saveBusy, setSaveBusy] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [savedId, setSavedId] = useState<string | null>(null)
 
-  function addTopic() {
-    setTopics((t) => [...t, ''])
-  }
-
-  function setTopic(i: number, v: string) {
-    setTopics((t) => t.map((x, j) => (j === i ? v : x)))
-  }
-
-  function removeTopic(i: number) {
-    setTopics((t) => t.filter((_, j) => j !== i))
-  }
+  const loadTrendProfilesList = useCallback(
+    async (preferProfileId?: string) => {
+      const internalKey = form.internalKeyField.trim() || getMonthlyInternalKey()
+      setProfilesLoading(true)
+      try {
+        const list = await fetchTrendProfiles(apiBase, { internalKey })
+        setTrendProfiles(list)
+        const prefer = preferProfileId?.trim()
+        form.setSelectedProfileId((prev) => {
+          if (prefer && list.some((p) => p.profile_id === prefer)) return prefer
+          if (prev && list.some((p) => p.profile_id === prev)) return prev
+          return list[0]?.profile_id ?? ''
+        })
+      } catch {
+        setTrendProfiles([])
+        form.setSelectedProfileId('')
+      } finally {
+        setProfilesLoading(false)
+      }
+    },
+    [apiBase, form.internalKeyField, form.setSelectedProfileId]
+  )
 
   useEffect(() => {
-    if (digestMode !== 'peer_reviewed') {
-      setPdfAttachments([])
-    }
-  }, [digestMode])
+    void loadTrendProfilesList()
+  }, [loadTrendProfilesList])
 
-  async function handlePdfFiles(files: FileList | null) {
-    if (!files?.length) return
-    setPdfUploading(true)
-    setError(null)
-    try {
-      const added: { id: string; name: string }[] = []
-      for (const f of Array.from(files)) {
-        if (!f.name.toLowerCase().endsWith('.pdf')) {
-          setError('Можно загружать только файлы .pdf')
-          continue
-        }
-        const res = await uploadPdfDocument(apiBase, f)
-        added.push({ id: res.id, name: f.name })
-      }
-      if (added.length) {
-        setPdfAttachments((prev) => [...prev, ...added])
-      }
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message)
-      } else {
-        setError(err instanceof Error ? err.message : String(err))
-      }
-    } finally {
-      setPdfUploading(false)
-    }
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError(null)
-    const queries = topics.map((s) => s.trim()).filter(Boolean)
-    if (!queries.length) {
-      setError('Добавьте хотя бы одну поисковую строку.')
-      return
-    }
-    const mc = Number.parseInt(maxCandidates, 10)
-    const tn = Number.parseInt(topN, 10)
-    if (!Number.isFinite(mc) || mc < 10 || mc > 200) {
-      setError('max_candidates: число от 10 до 200')
-      return
-    }
-    if (!Number.isFinite(tn) || tn < 3 || tn > 40) {
-      setError('top_n_for_llm: число от 3 до 40')
-      return
-    }
-
-    const body: DigestRequest = {
-      topic_queries: queries,
-      digest_mode: digestMode,
-      max_candidates: mc,
-      top_n_for_llm: tn,
-      from_year: parseYear(fromYear),
-      to_year: parseYear(toYear),
-      exclude_dois: parseDois(excludeDois),
-    }
-
-    if (digestMode === 'peer_reviewed') {
-      body.peer_reviewed_only = peerReviewedOnly
-      const cid = openalexConceptId.trim()
-      if (cid) body.openalex_concept_id = cid
-      const sids = parseSourceIds(openalexSourceIds)
-      if (sids.length) body.openalex_source_ids = sids
-      if (pdfAttachments.length) {
-        body.attached_document_ids = pdfAttachments.map((p) => p.id)
-      }
-      body.fetch_oa_fulltext = fetchOaFulltext
-      body.deep_digest = deepDigest
-    }
-
-    if (digestMode === 'web_snippets') {
-      body.web_scholarly_sources_only = webScholarlyOnly
-      const extras = parseDois(webExtraTerms)
-      if (extras.length) body.web_search_additional_terms = extras
-    }
-
-    setLoading(true)
-    setData(null)
-    setLastRequestSnapshot(null)
-    try {
-      const res = await createDigest(apiBase, body)
-      setData(res)
-      setLastRequestSnapshot(body)
-    } catch (err) {
-      setData(null)
-      if (err instanceof ApiError) {
-        setError(err.message)
-      } else {
-        setError(err instanceof Error ? err.message : String(err))
-      }
-    } finally {
-      setLoading(false)
-    }
+  function setTab(tab: DigestTabId) {
+    setSearchParams(tab === 'once' ? {} : { tab }, { replace: true })
   }
 
   function openSaveSheet() {
-    const q = topics.map((s) => s.trim()).filter(Boolean)
+    const q = form.topicQueriesFromLines()
     const head = q[0]?.slice(0, 60) ?? 'Дайджест'
     setSaveTitle(
       `${new Date().toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })} — ${head}`,
@@ -209,7 +94,7 @@ export function DigestPage() {
   }
 
   async function handleSaveToServer() {
-    if (!data || !lastRequestSnapshot) return
+    if (!onceData || !lastRequestSnapshot) return
     const t = saveTitle.trim()
     if (!t) {
       setSaveError('Введите название.')
@@ -220,452 +105,152 @@ export function DigestPage() {
     try {
       const created = await saveDigest(apiBase, {
         title: t,
-        digest_response: data,
+        digest_response: onceData,
         request_snapshot: lastRequestSnapshot,
       })
       setSavedId(created.id)
     } catch (err) {
-      if (err instanceof ApiError) {
-        setSaveError(err.message)
-      } else {
-        setSaveError(err instanceof Error ? err.message : String(err))
-      }
+      setSaveError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err))
     } finally {
       setSaveBusy(false)
     }
   }
 
-  const presetSnapshot = useMemo(
-    (): Omit<DigestFormPreset, 'id' | 'name' | 'updatedAt'> => ({
-      digestMode,
-      peerReviewedOnly,
-      openalexConceptId,
-      openalexSourceIds,
-      maxCandidates,
-      topN,
-      fromYear,
-      toYear,
-      excludeDois,
-      webScholarlyOnly,
-      webExtraTerms,
-      fetchOaFulltext,
-      deepDigest,
-      topics: [...topics],
-    }),
-    [
-      digestMode,
-      peerReviewedOnly,
-      openalexConceptId,
-      openalexSourceIds,
-      maxCandidates,
-      topN,
-      fromYear,
-      toYear,
-      excludeDois,
-      webScholarlyOnly,
-      webExtraTerms,
-      fetchOaFulltext,
-      deepDigest,
-      topics,
-    ],
-  )
+  function handleOnceResult(data: DigestResponse | null, request: DigestRequest | null, error: string | null) {
+    setOnceData(data)
+    setLastRequestSnapshot(request)
+    setOnceError(error)
+  }
 
-  function applyPreset(p: DigestFormPreset) {
-    setDigestMode(p.digestMode)
-    setPeerReviewedOnly(p.peerReviewedOnly)
-    setOpenalexConceptId(p.openalexConceptId)
-    setOpenalexSourceIds(p.openalexSourceIds)
-    setMaxCandidates(p.maxCandidates)
-    setTopN(p.topN)
-    setFromYear(p.fromYear)
-    setToYear(p.toYear)
-    setExcludeDois(p.excludeDois)
-    setWebScholarlyOnly(p.webScholarlyOnly)
-    setWebExtraTerms(p.webExtraTerms)
-    setFetchOaFulltext(p.fetchOaFulltext ?? false)
-    setDeepDigest(p.deepDigest ?? false)
-    setTopics(p.topics.length ? [...p.topics] : [''])
+  function handleSnapResult(data: MonthlyDigestResponse | null, error: string | null) {
+    setSnapData(data)
+    setSnapError(error)
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-10 pb-8">
+    <div className="mx-auto max-w-4xl space-y-8 pb-8">
       <PageOnboarding
-        title="Как получить разовый дайджест"
+        title="Дайджест литературы"
         steps={[
           {
-            title: 'Темы и режим',
-            detail:
-              'Задайте одну или несколько поисковых строк (удобно дублировать на EN/RU). Выберите рецензируемый корпус или веб-обзор по сниппетам.',
+            title: 'Общие параметры',
+            detail: 'Темы, режим источников и лимиты задаются один раз для всех режимов запуска.',
           },
           {
-            title: 'Пресеты',
-            detail: 'Сохраните частые наборы параметров в пресетах в браузере.',
+            title: 'Разовый или снимок',
+            detail:
+              'Разовый — без сохранения в тренды. Снимок — запись в базу и сравнение с прошлым периодом на вкладке «Тренды».',
           },
           {
-            title: 'Запуск и результат',
+            title: 'Расписание у направления',
             detail:
-              'После «Сформировать дайджест» подождите 5–15 минут; затем появится текст RU/EN, карточки и экспорт в Markdown.',
+              'У каждого направления своё расписание автозапуска снимка — настройка под выбранным профилем на вкладке «Снимок».',
           },
         ]}
       />
 
-      <Card className="border-border/70 shadow-sm">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-xl">Параметры дайджеста</CardTitle>
-          <CardDescription className="text-pretty">
-            Режим «рецензируемый корпус»: OpenAlex (и опционально Semantic Scholar). Режим «веб-обзор»:
-            короткие сниппеты через Tavily + LLM, с отдельным дисклеймером. После отправки запрос может
-            выполняться долго (ориентир 5–15 минут в зависимости от объёма и прокси); не закрывайте вкладку.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <DigestPresetsBar onApply={applyPreset} snapshot={presetSnapshot} />
+      <DigestSharedParams form={form} />
 
-            <div className="space-y-2">
-              <Label htmlFor="digest-mode">Режим</Label>
-              <Select
-                value={digestMode}
-                onValueChange={(v) => setDigestMode(v as DigestMode)}
-              >
-                <SelectTrigger id="digest-mode" className="h-auto min-h-10 w-full max-w-xl py-2 whitespace-normal">
-                  <SelectValue placeholder="Выберите режим" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="peer_reviewed">Рецензируемый корпус (OpenAlex / Semantic Scholar)</SelectItem>
-                  <SelectItem value="web_snippets">Веб-обзор по сниппетам (Tavily)</SelectItem>
-                </SelectContent>
-              </Select>
+      <Tabs value={activeTab} onValueChange={(v) => setTab(parseDigestTab(v))}>
+        <TabsList variant="line" className="w-full max-w-full flex-wrap justify-start gap-1">
+          {DIGEST_TABS.map((t) => (
+            <TabsTrigger key={t.id} value={t.id} className="px-3">
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+
+        <TabsContent value="once" className="mt-6 space-y-8">
+          <DigestOnceExtras
+            apiBase={apiBase}
+            form={form}
+            loading={onceLoading}
+            setLoading={setOnceLoading}
+            onResult={handleOnceResult}
+          />
+          <section className="space-y-4">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Результат</h2>
+                <p className="mt-1 text-xs text-muted-foreground/90">Текст дайджеста и карточки источников</p>
+              </div>
+              {onceData && !onceLoading ? (
+                <Button type="button" variant="secondary" size="sm" className="print:hidden" onClick={openSaveSheet}>
+                  Сохранить в архив
+                </Button>
+              ) : null}
             </div>
-
-            {digestMode === 'web_snippets' ? (
-              <>
-                <Alert className="border-primary/25 bg-primary/5">
-                  <AlertTitle>Веб-обзор</AlertTitle>
-                  <AlertDescription>
-                    Это не систематический обзор литературы и не каталог рецензируемых статей. На стороне сервера
-                    должен быть настроен доступ к поиску Tavily (ключ задаёт администратор). По умолчанию поиск
-                    ограничен научными доменами, а не всем интернетом.
-                  </AlertDescription>
-                </Alert>
-                <div className="space-y-4 rounded-lg border border-border/80 bg-muted/15 p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0 space-y-1">
-                      <Label htmlFor="web-scholarly" className="text-sm font-medium">
-                        Только научные сайты
-                      </Label>
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        Tavily ищет в списке академических доменов. Отключите, чтобы искать по всей сети (менее
-                        предсказуемо).
-                      </p>
-                    </div>
-                    <Switch
-                      id="web-scholarly"
-                      checked={webScholarlyOnly}
-                      onCheckedChange={setWebScholarlyOnly}
-                      className="shrink-0"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="web-extra">Дополнительные ключевые слова к запросу (через запятую)</Label>
-                    <Input
-                      id="web-extra"
-                      value={webExtraTerms}
-                      onChange={(e) => setWebExtraTerms(e.target.value)}
-                      placeholder="например: photovoltaic, perovskite"
-                    />
-                  </div>
-                </div>
-              </>
-            ) : null}
-
-            <div className="space-y-2">
-              <Label>Поисковые строки (RU/EN)</Label>
-              <p className="text-xs text-muted-foreground">
-                Короткие фразы по сути темы; дублирование на двух языках улучшает отбор в OpenAlex.
+            {!onceLoading && !onceData && !onceError ? (
+              <p className="rounded-lg border border-dashed border-border/80 bg-muted/15 px-4 py-3 text-sm text-muted-foreground print:hidden">
+                Здесь появится дайджест RU/EN после запуска на вкладке «Разовый».
               </p>
-              {topics.map((t, i) => (
-                <div key={i} className="flex gap-2">
-                  <Input
-                    value={t}
-                    onChange={(e) => setTopic(i, e.target.value)}
-                    placeholder="Тема"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => removeTopic(i)}
-                    disabled={topics.length <= 1}
-                    aria-label="Удалить строку"
-                  >
-                    ×
-                  </Button>
-                </div>
-              ))}
-              <Button type="button" variant="secondary" size="sm" onClick={addTopic}>
-                Добавить строку
-              </Button>
-            </div>
-
-            {digestMode === 'peer_reviewed' ? (
-              <>
-                <div className="flex items-start gap-3 rounded-lg border border-border/80 bg-muted/15 p-4">
-                  <Checkbox
-                    id="peer-only"
-                    checked={peerReviewedOnly}
-                    onCheckedChange={(c) => setPeerReviewedOnly(c === true)}
-                    className="mt-0.5"
-                  />
-                  <div className="space-y-1">
-                    <Label htmlFor="peer-only" className="cursor-pointer text-sm font-medium leading-snug">
-                      Только журнальные статьи
-                    </Label>
-                    <p className="text-xs text-muted-foreground">Только записи типа «статья» в индексе</p>
-                  </div>
-                </div>
-                <div className="space-y-4 rounded-lg border border-border/80 bg-muted/15 p-4">
-                  <div className="flex items-start gap-3">
-                    <Checkbox
-                      id="fetch-oa"
-                      checked={fetchOaFulltext}
-                      onCheckedChange={(c) => setFetchOaFulltext(c === true)}
-                      className="mt-0.5"
-                    />
-                    <div className="space-y-1">
-                      <Label htmlFor="fetch-oa" className="cursor-pointer text-sm font-medium leading-snug">
-                        OA-полнотекст по DOI (Unpaywall)
-                      </Label>
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        Для открытых статей сервер запрашивает ссылку на PDF через Unpaywall, скачивает файл, извлекает
-                        текст и учитывает его в анализе (с кэшем на диске). Администратору нужно указать контактный
-                        email для запросов к Unpaywall в настройках сервиса.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <Checkbox
-                      id="deep-digest"
-                      checked={deepDigest}
-                      onCheckedChange={(c) => setDeepDigest(c === true)}
-                      className="mt-0.5"
-                    />
-                    <div className="space-y-1">
-                      <Label htmlFor="deep-digest" className="cursor-pointer text-sm font-medium leading-snug">
-                        Глубокий дайджест (двухэтапный LLM)
-                      </Label>
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        Сначала краткая выжимка по каждой статье, затем общий обзор. Удобно при длинных PDF и больших
-                        выборках; автоматически включается и при очень большом объёме текста. Больше запросов к языковой
-                        модели.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-3 rounded-lg border border-border/80 bg-muted/15 p-4">
-                  <div className="space-y-1">
-                    <Label className="text-sm font-medium">Свои PDF (необязательно)</Label>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      Файлы отправляются на сервер, из них извлекается текст и они участвуют в общем отборе вместе с
-                      OpenAlex и др. Для веб-режима (Tavily) загрузки не используются.
-                    </p>
-                  </div>
-                  <input
-                    ref={pdfInputRef}
-                    type="file"
-                    accept="application/pdf,.pdf"
-                    multiple
-                    className="hidden"
-                    onChange={(ev) => {
-                      void handlePdfFiles(ev.target.files)
-                      ev.target.value = ''
-                    }}
-                  />
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      disabled={loading || pdfUploading}
-                      onClick={() => pdfInputRef.current?.click()}
-                    >
-                      {pdfUploading ? 'Загрузка…' : 'Добавить PDF'}
-                    </Button>
-                    {pdfAttachments.length ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="text-xs"
-                        onClick={() => setPdfAttachments([])}
-                      >
-                        Очистить список
-                      </Button>
-                    ) : null}
-                  </div>
-                  {pdfAttachments.length ? (
-                    <ul className="space-y-1 text-xs text-muted-foreground">
-                      {pdfAttachments.map((p) => (
-                        <li key={p.id} className="flex items-center justify-between gap-2">
-                          <span className="min-w-0 truncate font-mono text-[11px]" title={p.id}>
-                            {p.name}
-                          </span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 shrink-0 px-2 text-xs"
-                            onClick={() => setPdfAttachments((prev) => prev.filter((x) => x.id !== p.id))}
-                          >
-                            Убрать
-                          </Button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="concept-id">OpenAlex concept id (необязательно)</Label>
-                    <Input
-                      id="concept-id"
-                      value={openalexConceptId}
-                      onChange={(e) => setOpenalexConceptId(e.target.value)}
-                      placeholder="C2778805519 или полный URL"
-                    />
-                  </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="source-ids">OpenAlex source id (журналы), через запятую</Label>
-                    <Input
-                      id="source-ids"
-                      value={openalexSourceIds}
-                      onChange={(e) => setOpenalexSourceIds(e.target.value)}
-                      placeholder="S123... или https://openalex.org/S..."
-                    />
-                  </div>
-                </div>
-              </>
             ) : null}
+            <DigestResultView
+              loading={onceLoading}
+              loadingHint={
+                onceLoading
+                  ? 'Идёт сбор публикаций и вызов LLM — оставьте страницу открытой.'
+                  : undefined
+              }
+              error={onceError && !onceData ? onceError : null}
+              data={onceData}
+            />
+          </section>
+        </TabsContent>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="max-c">max_candidates</Label>
-                <Input
-                  id="max-c"
-                  type="number"
-                  min={10}
-                  max={200}
-                  value={maxCandidates}
-                  onChange={(e) => setMaxCandidates(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="top-n">top_n_for_llm</Label>
-                <Input
-                  id="top-n"
-                  type="number"
-                  min={3}
-                  max={40}
-                  value={topN}
-                  onChange={(e) => setTopN(e.target.value)}
-                />
-              </div>
+        <TabsContent value="snapshot" className="mt-6 space-y-8">
+          <DigestSnapshotPanel
+            apiBase={apiBase}
+            form={form}
+            trendProfiles={trendProfiles}
+            profilesLoading={profilesLoading}
+            onRefreshProfiles={(id) => void loadTrendProfilesList(id)}
+            loading={snapLoading}
+            setLoading={setSnapLoading}
+            onResult={handleSnapResult}
+          />
+          <DigestSchedulePanel
+            apiBase={apiBase}
+            form={form}
+            trendProfiles={trendProfiles}
+            profileId={form.selectedProfileId}
+          />
+          <section className="space-y-4">
+            <div>
+              <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Результат</h2>
+              <p className="mt-1 text-xs text-muted-foreground/90">Дайджест, метаданные и структурированные тренды</p>
             </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="from-y">Год от (необязательно)</Label>
-                <Input
-                  id="from-y"
-                  type="number"
-                  min={1900}
-                  max={2100}
-                  value={fromYear}
-                  onChange={(e) => setFromYear(e.target.value)}
-                  placeholder="например 2020"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="to-y">Год до (необязательно)</Label>
-                <Input
-                  id="to-y"
-                  type="number"
-                  min={1900}
-                  max={2100}
-                  value={toYear}
-                  onChange={(e) => setToYear(e.target.value)}
-                  placeholder="пусто = без верхней границы"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="exclude">Исключить DOI (через запятую или с новой строки)</Label>
-              <Textarea
-                id="exclude"
-                value={excludeDois}
-                onChange={(e) => setExcludeDois(e.target.value)}
-                rows={3}
-                placeholder="10.1234/..."
-              />
-            </div>
-
-            {error ? (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
+            {!snapLoading && !snapData && !snapError ? (
+              <p className="rounded-lg border border-dashed border-border/80 bg-muted/15 px-4 py-3 text-sm text-muted-foreground print:hidden">
+                После запуска снимка — дайджест RU/EN и блок изменений относительно прошлого периода.
+              </p>
             ) : null}
-
-            <Button type="submit" disabled={loading} size="lg" className="min-w-[200px]">
-              {loading ? 'Формирование…' : 'Сформировать дайджест'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Результат</h2>
-            <p className="mt-1 text-xs text-muted-foreground/90">Текст дайджеста и карточки источников</p>
-          </div>
-          {data && !loading ? (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="print:hidden"
-              onClick={() => openSaveSheet()}
-            >
-              Сохранить в архив
-            </Button>
-          ) : null}
-        </div>
-        {!loading && !data && !error ? (
-          <p className="rounded-lg border border-dashed border-border/80 bg-muted/15 px-4 py-3 text-sm text-muted-foreground print:hidden">
-            Здесь появится дайджест на русском и английском, карточки статей и таблица публикаций. Время
-            генерации зависит от объёма; типичный ориентир — несколько минут.
-          </p>
-        ) : null}
-        <DigestResultView
-          loading={loading}
-          loadingHint={
-            loading
-              ? 'Идёт сбор публикаций и вызов LLM — это может занять несколько минут. Оставьте страницу открытой.'
-              : undefined
-          }
-          error={error && !data ? error : null}
-          data={data}
-        />
-      </section>
+            <DigestResultView
+              loading={snapLoading}
+              loadingHint={
+                snapLoading
+                  ? 'Снимок и сравнение с предыдущим периодом — ориентир 5–15 минут. Не закрывайте вкладку.'
+                  : undefined
+              }
+              error={snapError && !snapData ? snapError : null}
+              data={snapData ?? undefined}
+            />
+            {snapData?.structured_delta ? (
+              <div className="mt-10 space-y-4">
+                <h3 className="text-lg font-heading font-medium">Структурированные тренды</h3>
+                <StructuredDeltaView delta={snapData.structured_delta} />
+              </div>
+            ) : null}
+          </section>
+        </TabsContent>
+      </Tabs>
 
       <Sheet open={saveOpen} onOpenChange={setSaveOpen}>
         <SheetContent className="flex flex-col sm:max-w-md">
           <SheetHeader>
             <SheetTitle>Сохранить в архив</SheetTitle>
             <SheetDescription>
-              Запись будет доступна в разделе «Сохранённые» (та же база на сервере, что и тренды).
+              Запись будет доступна в разделе «Сохранённые».
             </SheetDescription>
           </SheetHeader>
           <div className="space-y-3 py-2">

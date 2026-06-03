@@ -1,0 +1,232 @@
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
+import type { DigestFormState } from '@/hooks/useDigestFormState'
+import type { DigestMode } from '@/types/api'
+
+type DigestSharedParamsProps = {
+  form: DigestFormState
+  idPrefix?: string
+}
+
+export function DigestSharedParams({ form, idPrefix = 'shared' }: DigestSharedParamsProps) {
+  const modeId = `${idPrefix}-digest-mode`
+
+  return (
+    <Card className="border-border/70 shadow-sm">
+      <CardHeader className="space-y-1">
+        <CardTitle className="text-xl">Общие параметры поиска</CardTitle>
+        <CardDescription className="text-pretty">
+          Темы, режим источников и лимиты используются для разового дайджеста, снимка с трендами и нового
+          расписания.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-2">
+          <Label htmlFor={modeId}>Режим источников</Label>
+          <Select
+            value={form.digestMode}
+            onValueChange={(v) => form.setDigestMode(v as DigestMode)}
+          >
+            <SelectTrigger id={modeId} className="h-auto min-h-10 w-full max-w-xl py-2 whitespace-normal">
+              <SelectValue placeholder="Режим" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="peer_reviewed">Рецензируемый корпус (OpenAlex и др.)</SelectItem>
+              <SelectItem value="web_snippets">Веб-обзор по сниппетам (Tavily)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {form.digestMode === 'web_snippets' ? (
+          <>
+            <Alert className="border-primary/25 bg-primary/5">
+              <AlertTitle>Веб-обзор</AlertTitle>
+              <AlertDescription>
+                Короткие сниппеты через Tavily и отдельный дисклеймер. На сервере должен быть ключ Tavily.
+              </AlertDescription>
+            </Alert>
+            <div className="space-y-4 rounded-lg border border-border/80 bg-muted/15 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 space-y-1">
+                  <Label htmlFor={`${idPrefix}-web-scholarly`} className="text-sm font-medium">
+                    Только научные сайты
+                  </Label>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    По умолчанию Tavily ограничен академическими доменами.
+                  </p>
+                </div>
+                <Switch
+                  id={`${idPrefix}-web-scholarly`}
+                  checked={form.webScholarlyOnly}
+                  onCheckedChange={form.setWebScholarlyOnly}
+                  className="shrink-0"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor={`${idPrefix}-web-extra`}>Дополнительные ключевые слова (через запятую)</Label>
+                <Input
+                  id={`${idPrefix}-web-extra`}
+                  value={form.webExtraTerms}
+                  onChange={(e) => form.setWebExtraTerms(e.target.value)}
+                  placeholder="например: battery, review"
+                />
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        <div className="space-y-2">
+          <Label>Поисковые строки (RU/EN)</Label>
+          <p className="text-xs text-muted-foreground">
+            Короткие фразы по сути темы; дублирование на двух языках улучшает отбор в OpenAlex.
+          </p>
+          {form.topics.map((t, i) => (
+            <div key={i} className="flex gap-2">
+              <Input
+                value={t}
+                onChange={(e) => form.setTopic(i, e.target.value)}
+                placeholder="Тема"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => form.removeTopic(i)}
+                disabled={form.topics.length <= 1}
+                aria-label="Удалить строку"
+              >
+                ×
+              </Button>
+            </div>
+          ))}
+          <Button type="button" variant="secondary" size="sm" onClick={form.addTopic}>
+            Добавить строку
+          </Button>
+        </div>
+
+        {form.digestMode === 'peer_reviewed' ? (
+          <div className="space-y-4 rounded-lg border border-border/80 bg-muted/15 p-4">
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id={`${idPrefix}-fetch-oa`}
+                checked={form.fetchOaFulltext}
+                onCheckedChange={(c) => form.setFetchOaFulltext(c === true)}
+                className="mt-0.5"
+              />
+              <div className="space-y-1">
+                <Label htmlFor={`${idPrefix}-fetch-oa`} className="cursor-pointer text-sm font-medium leading-snug">
+                  OA-полнотекст по DOI (Unpaywall)
+                </Label>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Для открытых статей подтягивается текст PDF для модели.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="flex items-start gap-3 rounded-lg border border-border/80 bg-muted/15 p-4">
+          <Checkbox
+            id={`${idPrefix}-deep`}
+            checked={form.deepDigest}
+            onCheckedChange={(c) => form.setDeepDigest(c === true)}
+            className="mt-0.5"
+          />
+          <div className="space-y-1">
+            <Label htmlFor={`${idPrefix}-deep`} className="cursor-pointer text-sm font-medium leading-snug">
+              Глубокий дайджест (двухэтапный LLM)
+            </Label>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Кратко по каждому источнику, затем сводка. Дольше и больше вызовов к модели.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-max-c`}>Макс. кандидатов (10–200)</Label>
+            <Input
+              id={`${idPrefix}-max-c`}
+              type="number"
+              min={10}
+              max={200}
+              value={form.maxCandidates}
+              onChange={(e) => form.setMaxCandidates(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-top-n`}>Статей для модели (3–40)</Label>
+            <Input
+              id={`${idPrefix}-top-n`}
+              type="number"
+              min={3}
+              max={40}
+              value={form.topN}
+              onChange={(e) => form.setTopN(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-trend-k`}>Размер топа для трендов (5–60)</Label>
+            <Input
+              id={`${idPrefix}-trend-k`}
+              type="number"
+              min={5}
+              max={60}
+              value={form.trendTopK}
+              onChange={(e) => form.setTrendTopK(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-from-y`}>Год от</Label>
+            <Input
+              id={`${idPrefix}-from-y`}
+              type="number"
+              min={1900}
+              max={2100}
+              value={form.fromYear}
+              onChange={(e) => form.setFromYear(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-to-y`}>Год до</Label>
+            <Input
+              id={`${idPrefix}-to-y`}
+              type="number"
+              min={1900}
+              max={2100}
+              value={form.toYear}
+              onChange={(e) => form.setToYear(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor={`${idPrefix}-exclude`}>Исключить DOI</Label>
+          <Textarea
+            id={`${idPrefix}-exclude`}
+            value={form.excludeDois}
+            onChange={(e) => form.setExcludeDois(e.target.value)}
+            rows={2}
+            placeholder="10.1234/..."
+          />
+        </div>
+      </CardContent>
+    </Card>
+  )
+}

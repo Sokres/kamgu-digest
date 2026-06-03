@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { SettingsSheet } from '@/components/SettingsSheet'
 import { useAuth } from '@/context/AuthContext'
@@ -12,19 +12,15 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import {
   BookSearchIcon,
   Bookmark01Icon,
-  Calendar03Icon,
   PresentationBarChart01Icon,
   Settings02Icon,
 } from '@hugeicons/core-free-icons'
+import { DIGEST_TAB_SUBTITLES, parseDigestTab } from '@/lib/digestTabs'
 
 const ROUTE_META: Record<string, { title: string; subtitle: string }> = {
   '/': {
     title: 'Дайджест',
-    subtitle: 'Разовый обзор литературы по темам — текст RU/EN и список источников',
-  },
-  '/monthly': {
-    title: 'Периодический',
-    subtitle: 'Снимок на сервере и сравнение с прошлым периодом; расписание — ниже или у администратора',
+    subtitle: DIGEST_TAB_SUBTITLES.once,
   },
   '/trends': {
     title: 'Тренды',
@@ -36,7 +32,13 @@ const ROUTE_META: Record<string, { title: string; subtitle: string }> = {
   },
 }
 
-function routeMeta(pathname: string): { title: string; subtitle: string } {
+function routeMeta(pathname: string, digestTab: ReturnType<typeof parseDigestTab>): { title: string; subtitle: string } {
+  if (pathname === '/' || pathname === '/monthly') {
+    return {
+      title: 'Дайджест',
+      subtitle: DIGEST_TAB_SUBTITLES[digestTab],
+    }
+  }
   if (pathname === '/saved' || pathname.startsWith('/saved/')) {
     return pathname === '/saved'
       ? ROUTE_META['/saved']
@@ -102,9 +104,10 @@ export function AppLayout(props: {
   const { apiBase, onApiBaseChange, children } = props
   const [settingsOpen, setSettingsOpen] = useState(false)
   const location = useLocation()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { authEnabled, username, logout } = useAuth()
-  const meta = routeMeta(location.pathname)
+  const meta = routeMeta(location.pathname, parseDigestTab(searchParams.get('tab')))
 
   function handleLogout() {
     logout()
@@ -134,10 +137,6 @@ export function AppLayout(props: {
           >
             <HugeiconsIcon icon={BookSearchIcon} strokeWidth={2} className="size-[18px] opacity-90" />
             Дайджест
-          </NavLink>
-          <NavLink to="/monthly" className={(p) => cn(navClass(p), 'flex-1 justify-center md:flex-none md:justify-start')}>
-            <HugeiconsIcon icon={Calendar03Icon} strokeWidth={2} className="size-[18px] opacity-90" />
-            Периодический
           </NavLink>
           <NavLink to="/trends" className={(p) => cn(navClass(p), 'flex-1 justify-center md:flex-none md:justify-start')}>
             <HugeiconsIcon icon={PresentationBarChart01Icon} strokeWidth={2} className="size-[18px] opacity-90" />

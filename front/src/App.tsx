@@ -7,7 +7,6 @@ import { AuthProvider } from '@/context/AuthContext'
 import { getApiBaseUrl } from '@/lib/settings'
 import { DigestPage } from '@/pages/DigestPage'
 import { LoginPage } from '@/pages/LoginPage'
-import { MonthlyPage } from '@/pages/MonthlyPage'
 import { SavedDigestsPage } from '@/pages/SavedDigestsPage'
 import { SharedDigestPage } from '@/pages/SharedDigestPage'
 import { TrendsPage } from '@/pages/TrendsPage'
@@ -35,7 +34,7 @@ export default function App() {
               <Route index element={<DigestPage />} />
               <Route path="saved" element={<SavedDigestsPage />} />
               <Route path="saved/:id" element={<SavedDigestsPage />} />
-              <Route path="monthly" element={<MonthlyPage />} />
+              <Route path="monthly" element={<Navigate to="/?tab=snapshot" replace />} />
               <Route path="trends" element={<TrendsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

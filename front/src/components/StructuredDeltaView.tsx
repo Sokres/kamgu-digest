@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { cn } from '@/lib/utils'
 import { deltaSignedClass } from '@/lib/deltaClass'
 import type { MonthlyStructuredDelta } from '@/types/api'
 
@@ -38,12 +39,12 @@ function CitationRows({
           <TableBody>
             {rows.map((r) => (
               <TableRow key={r.dedupe_key}>
-                <TableCell className="max-w-md">{r.title}</TableCell>
-                <TableCell className={deltaSignedClass(r.citation_delta ?? null)}>
+                <TableCell className="min-w-0 max-w-md">{r.title}</TableCell>
+                <TableCell className={cn('whitespace-nowrap tabular-nums', deltaSignedClass(r.citation_delta ?? null))}>
                   {r.citation_delta == null ? '—' : r.citation_delta > 0 ? `+${r.citation_delta}` : String(r.citation_delta)}
                 </TableCell>
-                <TableCell>{r.rank_previous ?? '—'}</TableCell>
-                <TableCell>{r.rank_current ?? '—'}</TableCell>
+                <TableCell className="whitespace-nowrap tabular-nums">{r.rank_previous ?? '—'}</TableCell>
+                <TableCell className="whitespace-nowrap tabular-nums">{r.rank_current ?? '—'}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -77,14 +78,14 @@ function ConceptTable({
           <TableBody>
             {rows.map((r) => (
               <TableRow key={r.concept_name}>
-                <TableCell>{r.concept_name}</TableCell>
-                <TableCell>
+                <TableCell className="min-w-0">{r.concept_name}</TableCell>
+                <TableCell className="whitespace-nowrap tabular-nums">
                   {r.share_previous != null ? r.share_previous.toFixed(3) : '—'}
                 </TableCell>
-                <TableCell>
+                <TableCell className="whitespace-nowrap tabular-nums">
                   {r.share_current != null ? r.share_current.toFixed(3) : '—'}
                 </TableCell>
-                <TableCell className={deltaSignedClass(r.delta ?? null)}>
+                <TableCell className={cn('whitespace-nowrap tabular-nums', deltaSignedClass(r.delta ?? null))}>
                   {r.delta != null ? (r.delta > 0 ? `+${r.delta.toFixed(3)}` : r.delta.toFixed(3)) : '—'}
                 </TableCell>
               </TableRow>

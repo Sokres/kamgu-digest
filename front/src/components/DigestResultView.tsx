@@ -299,7 +299,7 @@ function PublicationsTable({ rows }: { rows: PublicationInput[] }) {
         <TableBody>
           {rows.map((p, i) => (
             <TableRow key={`${p.doi ?? p.title}-${i}`}>
-              <TableCell className="max-w-[min(480px,40vw)]">
+              <TableCell className="min-w-0 max-w-[min(480px,40vw)]">
                 {p.url ? (
                   <a href={p.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
                     {p.title}
@@ -311,8 +311,8 @@ function PublicationsTable({ rows }: { rows: PublicationInput[] }) {
                   <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{p.abstract}</p>
                 ) : null}
               </TableCell>
-              <TableCell>{p.year ?? '—'}</TableCell>
-              <TableCell className="text-xs">{p.source || '—'}</TableCell>
+              <TableCell className="whitespace-nowrap tabular-nums">{p.year ?? '—'}</TableCell>
+              <TableCell className="whitespace-nowrap text-xs">{p.source || '—'}</TableCell>
               {showOa ? (
                 <TableCell className="text-xs">
                   {p.oa_url ? (

@@ -335,3 +335,69 @@ ls front/dist/assets/ | head -10
 ## 7. Альтернатива: GitLab CI
 
 Файл [`.gitlab-ci.yml`](../.gitlab-ci.yml) дублирует проверки CI для репозитория на GitLab.
+
+## 8. Смена ключей LLM и перезагрузка API
+
+Переменные `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` читаются **при старте контейнера `api`**. Правка `.env` на диске без пересоздания контейнера **не подхватывается** (аналогично локальному uvicorn: `--reload` не перечитывает `.env`).
+
+### Где задавать ключи
+
+Compose подключает оба файла (см. `docker-compose.prod.yml`); при одинаковых именах переменных побеждает **`backend/.env`**:
+
+| Файл | Типичное содержимое |
+|------|---------------------|
+| `/opt/kamgu/.env` (корень) | `POSTGRES_*`, `SNAPSHOT_DATABASE_URL`, `CORS_ORIGINS`, `VITE_API_BASE_URL` |
+| `/opt/kamgu/backend/.env` | `OPENROUTER_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, HTTP/источники |
+
+Для OpenRouter: `OPENAI_BASE_URL=https://openrouter.ai/api/v1`, ключ `sk-or-v1-...` с [openrouter.ai/keys](https://openrouter.ai/keys). Не смешивайте с ключом OpenAI (`sk-proj-...`) при URL OpenRouter. Подробнее — комментарии в `backend/.env.example`.
+
+### Перезагрузить API после правки `.env`
+
+На сервере из корня клона:
+
+```bash
+cd /opt/kamgu
+nano backend/.env   # или корневой .env — по необходимости
+docker compose -f docker-compose.prod.yml --env-file .env up -d --force-recreate api
+```
+
+`docker compose restart api` **недостаточно** — нужен именно `--force-recreate`, чтобы заново применить `env_file`.
+
+Проверка:
+
+```bash
+curl -s http://127.0.0.1:8080/health
+docker compose -f docker-compose.prod.yml exec api python3 -c "
+from digest.config import settings
+k = settings.llm_api_key_resolved()
+print(settings.llm_api_key_source_label(), settings.openai_base_url, (k[:12]+'...') if k else 'EMPTY')
+"
+```
+
+Ожидается: `openrouter_api_key` (или `openai_api_key`) и непустой префикс ключа. В логах при дайджесте: `key=openrouter_api_key` и `POST .../chat/completions "HTTP/1.1 200 OK"`. Если `key=client_headers` — см. сброс в браузере ниже.
+
+Полный деплой (код + фронт + контейнеры): `bash deploy/remote-update.sh` или `docker compose -f docker-compose.prod.yml --env-file .env up -d --build` (п. 3).
+
+### Сброс ключа LLM в браузере (BYOK)
+
+Если пользователь в настройках сайта выбирал свой провайдер и сохранил ключ, запросы идут с заголовком `X-Kamgu-Llm-Key` и **перекрывают** серверный `.env`, пока override не снят.
+
+1. На сайте: **Настройки** → пресет **«Как на сервере»** → поле ключа **пустое** → **Сохранить**.
+2. Либо в консоли браузера (F12) на домене приложения:
+
+```javascript
+localStorage.removeItem('kamgu_llm_api_key');
+localStorage.removeItem('kamgu_llm_base_url');
+localStorage.removeItem('kamgu_llm_model');
+localStorage.setItem('kamgu_llm_preset_id', 'server');
+```
+
+Переключение пресета на «Как на сервере» **без** нажатия **Сохранить** старый ключ в `localStorage` не удаляет.
+
+### Типичные ошибки
+
+| Симптом | Причина |
+|---------|---------|
+| `401 User not found` от OpenRouter | Неверный/старый ключ в **работающем** контейнере или ключ из браузера (`client_headers`) |
+| `503` «Не найдено публикаций» | Пустые источники (OpenAlex/SS), не LLM |
+| Ключ в `backend/.env` новый, ошибка остаётся | Не выполнен `force-recreate api` или в браузере сохранён свой ключ |

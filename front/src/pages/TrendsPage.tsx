@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { Link, useOutletContext } from 'react-router-dom'
 
 import { PageOnboarding } from '@/components/PageOnboarding'
+import { profileDisplayName } from '@/components/ProfileDirectionPicker'
 import { TrendAreaChart } from '@/components/TrendAreaChart'
 import { TrendCompareChart } from '@/components/TrendCompareChart'
 import { TrendDeltaBarChart } from '@/components/TrendDeltaBarChart'
@@ -30,11 +31,6 @@ import { cn } from '@/lib/utils'
 
 const COMPARE_NONE = '__none__'
 
-function profileTitle(p: TrendProfileSummary): string {
-  const d = (p.display_name ?? '').trim()
-  return d || p.profile_id
-}
-
 export function TrendsPage() {
   const { apiBase } = useOutletContext<{ apiBase: string }>()
   const [profiles, setProfiles] = useState<TrendProfileSummary[]>([])
@@ -55,13 +51,18 @@ export function TrendsPage() {
   const [newTrendName, setNewTrendName] = useState('')
   const [creatingTrend, setCreatingTrend] = useState(false)
 
-  const loadProfiles = useCallback(async () => {
+  const loadProfiles = useCallback(async (preferProfileId?: string) => {
     setLoadingList(true)
     setError(null)
     try {
       const list = await fetchTrendProfiles(apiBase, { internalKey: getMonthlyInternalKey() })
       setProfiles(list)
-      setSelectedId((prev) => prev ?? list[0]?.profile_id ?? null)
+      const prefer = preferProfileId?.trim()
+      setSelectedId((prev) => {
+        if (prefer && list.some((p) => p.profile_id === prefer)) return prefer
+        if (prev && list.some((p) => p.profile_id === prev)) return prev
+        return list[0]?.profile_id ?? null
+      })
     } catch (e) {
       setProfiles([])
       setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e))
@@ -89,8 +90,7 @@ export function TrendsPage() {
         { internalKey: getMonthlyInternalKey() },
       )
       setNewTrendName('')
-      await loadProfiles()
-      setSelectedId(res.profile_id)
+      await loadProfiles(res.profile_id)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e))
     } finally {
@@ -270,9 +270,9 @@ export function TrendsPage() {
           ) : profiles.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Пока нет направлений — создайте одно полем выше или на странице{' '}
-              <a className="font-medium text-primary underline-offset-4 hover:underline" href="/monthly">
-                периодический дайджест
-              </a>
+              <Link className="font-medium text-primary underline-offset-4 hover:underline" to="/?tab=snapshot">
+                дайджеста (вкладка «Снимок»)
+              </Link>
               . Снимки появятся после первого успешного запуска дайджеста для выбранного направления.
             </p>
           ) : (
@@ -294,8 +294,8 @@ export function TrendsPage() {
                       className={cn('cursor-pointer', active && 'bg-muted/50')}
                       onClick={() => setSelectedId(p.profile_id)}
                     >
-                      <TableCell className="font-medium">{profileTitle(p)}</TableCell>
-                      <TableCell className="hidden font-mono text-xs text-muted-foreground sm:table-cell">
+                      <TableCell className="min-w-0 font-medium">{profileDisplayName(p)}</TableCell>
+                      <TableCell className="hidden min-w-0 break-all font-mono text-xs text-muted-foreground sm:table-cell">
                         {p.profile_id}
                       </TableCell>
                       <TableCell className="text-right">{p.snapshot_count}</TableCell>
@@ -352,7 +352,7 @@ export function TrendsPage() {
                           .filter((p) => p.profile_id !== selectedId)
                           .map((p) => (
                             <SelectItem key={p.profile_id} value={p.profile_id}>
-                              {profileTitle(p)}
+                              {profileDisplayName(p)}
                             </SelectItem>
                           ))}
                       </SelectContent>
@@ -377,8 +377,8 @@ export function TrendsPage() {
                     <TrendCompareChart
                       seriesA={points}
                       seriesB={comparePoints}
-                      labelA={selectedProfile ? profileTitle(selectedProfile) : selectedId ?? ''}
-                      labelB={compareProfile ? profileTitle(compareProfile) : compareId}
+                      labelA={selectedProfile ? profileDisplayName(selectedProfile) : selectedId ?? ''}
+                      labelB={compareProfile ? profileDisplayName(compareProfile) : compareId}
                     />
                   ) : (
                     <TrendSeriesChart points={points} maxWork={maxWork} />
