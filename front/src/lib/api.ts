@@ -21,6 +21,7 @@ import type {
   SavedDigestShareResponse,
   TrendProfileLabelUpdate,
   TrendProfileSummary,
+  TrendSnapshotDetail,
   TrendSeriesResponse,
 } from '@/types/api'
 import { getAccessToken, getMonthlyInternalKey, buildLlmClientHeaders, getRefreshToken, setAccessToken, setRefreshToken, clearAccessToken, clearRefreshToken } from '@/lib/settings'
@@ -705,4 +706,39 @@ export async function putTrendProfileLabel(
   )
   if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
   return r.json() as Promise<{ status: string; profile_id: string }>
+}
+
+export async function fetchTrendSnapshot(
+  baseUrl: string,
+  profileId: string,
+  period: string,
+  options?: { userId?: string; signal?: AbortSignal; accessToken?: string },
+): Promise<TrendSnapshotDetail> {
+  const enc = encodeURIComponent(profileId)
+  const per = encodeURIComponent(period)
+  const q = options?.userId?.trim() ? `?user_id=${encodeURIComponent(options.userId.trim())}` : ''
+  const r = await fetchWithAuthRetry(baseUrl, () =>
+    fetch(`${baseUrl}/trends/profiles/${enc}/snapshots/${per}${q}`, {
+      headers: apiHeaders({}, options),
+      signal: options?.signal,
+    }),
+  )
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+  return r.json() as Promise<TrendSnapshotDetail>
+}
+
+export async function deleteTrendProfile(
+  baseUrl: string,
+  profileId: string,
+  options?: { internalKey?: string; signal?: AbortSignal; accessToken?: string },
+): Promise<void> {
+  const enc = encodeURIComponent(profileId)
+  const r = await fetchWithAuthRetry(baseUrl, () =>
+    fetch(`${baseUrl}/trends/profiles/${enc}`, {
+      method: 'DELETE',
+      headers: apiHeaders({}, options),
+      signal: options?.signal,
+    }),
+  )
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
 }

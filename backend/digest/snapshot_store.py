@@ -909,6 +909,57 @@ def list_profile_summaries(
     return out
 
 
+def fetch_snapshot_for_period(
+    conn: sqlite3.Connection | PgConnection,
+    user_id: str,
+    profile_id: str,
+    period: str,
+) -> tuple[str, dict[str, Any]] | None:
+    backend = _backend_of_conn(conn)
+    ph = _ph(backend)
+    sql = f"""
+        SELECT created_at, payload_json FROM digest_snapshots
+        WHERE user_id = {ph} AND profile_id = {ph} AND period = {ph}
+        LIMIT 1
+    """
+    row = conn.execute(sql, (user_id, profile_id, period)).fetchone()
+    if not row:
+        return None
+    created_at, raw = row[0], row[1]
+    try:
+        payload = json.loads(raw) if isinstance(raw, str) else raw
+    except json.JSONDecodeError:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    return str(created_at), payload
+
+
+def delete_digest_profile(
+    conn: sqlite3.Connection | PgConnection,
+    user_id: str,
+    profile_id: str,
+) -> bool:
+    """Удаляет профиль, его снимки и расписания. Возвращает True, если профиль существовал."""
+    if not digest_profile_exists_for_user(conn, user_id, profile_id):
+        return False
+    backend = _backend_of_conn(conn)
+    ph = _ph(backend)
+    conn.execute(
+        f"DELETE FROM digest_snapshots WHERE user_id = {ph} AND profile_id = {ph}",
+        (user_id, profile_id),
+    )
+    conn.execute(
+        f"DELETE FROM periodic_digest_schedules WHERE user_id = {ph} AND profile_id = {ph}",
+        (user_id, profile_id),
+    )
+    conn.execute(
+        f"DELETE FROM digest_profiles WHERE user_id = {ph} AND profile_id = {ph}",
+        (user_id, profile_id),
+    )
+    return True
+
+
 def list_period_metrics_for_profile(
     conn: sqlite3.Connection | PgConnection,
     user_id: str,

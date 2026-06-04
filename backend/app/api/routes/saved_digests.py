@@ -59,7 +59,7 @@ async def list_saved_digests(
     for sid, title, created_at, payload_json, has_share in rows:
         try:
             env = SavedDigestEnvelope.model_validate(json.loads(payload_json))
-            m = env.digest_response.meta
+            m = env.resolved_digest_response().meta
             out.append(
                 SavedDigestListItem(
                     id=sid,
@@ -114,8 +114,10 @@ async def get_saved_digest(
         id=sid,
         title=title,
         created_at=created_at,
-        digest_response=env.digest_response,
+        digest_response=env.resolved_digest_response(),
+        monthly_digest=env.monthly_digest,
         request_snapshot=env.request,
+        monthly_request_snapshot=env.monthly_request,
         public_share_active=bool(share_tok),
     )
 
@@ -155,7 +157,8 @@ async def export_saved_digest_docx(
         raise HTTPException(status_code=500, detail="Повреждённые данные записи.") from e
 
     tq = env.request.topic_queries if env.request else None
-    buf = saved_digest_to_docx_bytes(title, created_at, env.digest_response, tq)
+    resp = env.resolved_digest_response()
+    buf = saved_digest_to_docx_bytes(title, created_at, resp, tq)
     data = buf.getvalue()
     _ascii_fn, cd = _docx_download_filename(title, sid)
     return Response(
@@ -180,9 +183,18 @@ async def create_saved_digest(
             detail=f"Название длиннее {title_max} символов.",
         )
 
+    digest_response = body.digest_response
+    if digest_response is None and body.monthly_digest is not None:
+        m = body.monthly_digest
+        digest_response = SavedDigestEnvelope(
+            digest_response=None,
+            monthly_digest=m,
+        ).resolved_digest_response()
     env = SavedDigestEnvelope(
-        digest_response=body.digest_response,
+        digest_response=digest_response,
+        monthly_digest=body.monthly_digest,
         request=body.request_snapshot,
+        monthly_request=body.monthly_request_snapshot,
     )
     raw = env.model_dump_json()
     max_b = max(1024, int(settings.saved_digest_max_payload_bytes))

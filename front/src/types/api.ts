@@ -98,7 +98,9 @@ export interface SavedDigestOut {
   title: string
   created_at: string
   digest_response: DigestResponse
+  monthly_digest?: MonthlyDigestResponse | null
   request_snapshot?: DigestRequest | null
+  monthly_request_snapshot?: MonthlyDigestRequest | null
   public_share_active?: boolean
 }
 
@@ -114,8 +116,10 @@ export interface SavedDigestShareResponse {
 
 export interface SavedDigestCreateBody {
   title: string
-  digest_response: DigestResponse
+  digest_response?: DigestResponse
+  monthly_digest?: MonthlyDigestResponse
   request_snapshot?: DigestRequest | null
+  monthly_request_snapshot?: MonthlyDigestRequest | null
 }
 
 export interface PdfDocumentUploadResponse {
@@ -210,6 +214,34 @@ export interface DigestProfileCreated {
   display_name: string
   note: string
   created_at: string
+}
+
+/** GET /trends/profiles/:id/snapshots/:period */
+export interface TrendSnapshotDetail {
+  profile_id: string
+  period: string
+  created_at: string
+  topic_queries: string[]
+  work_count: number
+  digest_available: boolean
+  digest_ru: string
+  digest_en: string
+  publications_used: PublicationInput[]
+  article_cards: ArticleCard[]
+  structured_delta?: MonthlyStructuredDelta | null
+  meta?: MonthlyDigestMeta | null
+  works: SnapshotWorkRecord[]
+}
+
+export interface SnapshotWorkRecord {
+  dedupe_key: string
+  title: string
+  year?: number | null
+  doi?: string | null
+  openalex_work_id?: string | null
+  citation_count?: number | null
+  rank: number
+  concepts?: ConceptRef[]
 }
 
 /** GET /trends/profiles/:id/series */

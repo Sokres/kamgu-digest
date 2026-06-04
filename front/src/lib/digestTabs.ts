@@ -13,5 +13,5 @@ export function parseDigestTab(raw: string | null): DigestTabId {
 export const DIGEST_TAB_SUBTITLES: Record<DigestTabId, string> = {
   once: 'Разовый обзор литературы по темам — текст RU/EN и список источников',
   snapshot:
-    'Направление: снимок в базу, сравнение с прошлым периодом, автозапуск по расписанию и графики на «Тренды»',
+    'Снимок в базу, пресеты параметров, автозапуск по расписанию и сравнение с прошлым периодом',
 }

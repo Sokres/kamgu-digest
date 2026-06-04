@@ -3,6 +3,8 @@ import { Link, useOutletContext } from 'react-router-dom'
 
 import { PageOnboarding } from '@/components/PageOnboarding'
 import { profileDisplayName } from '@/components/ProfileDirectionPicker'
+import { TrendProfilesOverview } from '@/components/trends/TrendProfilesOverview'
+import { TrendSnapshotSheet } from '@/components/trends/TrendSnapshotSheet'
 import { TrendAreaChart } from '@/components/TrendAreaChart'
 import { TrendCompareChart } from '@/components/TrendCompareChart'
 import { TrendDeltaBarChart } from '@/components/TrendDeltaBarChart'
@@ -23,10 +25,19 @@ import {
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
-import { ApiError, createTrendProfile, fetchTrendProfiles, fetchTrendSeries, putTrendProfileLabel } from '@/lib/api'
+import {
+  ApiError,
+  createTrendProfile,
+  deleteTrendProfile,
+  fetchTrendProfiles,
+  fetchTrendSeries,
+  fetchTrendSnapshot,
+  putTrendProfileLabel,
+} from '@/lib/api'
 import { deltaSignedClass } from '@/lib/deltaClass'
+import { digestSnapshotHref } from '@/lib/digestLinks'
 import { getMonthlyInternalKey } from '@/lib/settings'
-import type { TrendProfileSummary, TrendSeriesPoint } from '@/types/api'
+import type { TrendProfileSummary, TrendSeriesPoint, TrendSnapshotDetail } from '@/types/api'
 import { cn } from '@/lib/utils'
 
 const COMPARE_NONE = '__none__'
@@ -50,6 +61,13 @@ export function TrendsPage() {
 
   const [newTrendName, setNewTrendName] = useState('')
   const [creatingTrend, setCreatingTrend] = useState(false)
+
+  const [snapshotOpen, setSnapshotOpen] = useState(false)
+  const [snapshotPeriod, setSnapshotPeriod] = useState<string | null>(null)
+  const [snapshotDetail, setSnapshotDetail] = useState<TrendSnapshotDetail | null>(null)
+  const [snapshotLoading, setSnapshotLoading] = useState(false)
+  const [snapshotError, setSnapshotError] = useState<string | null>(null)
+  const [deletingProfile, setDeletingProfile] = useState(false)
 
   const loadProfiles = useCallback(async (preferProfileId?: string) => {
     setLoadingList(true)
@@ -181,6 +199,51 @@ export function TrendsPage() {
     comparePoints.length > 0 &&
     !loadingSeries
 
+  async function openSnapshotPeriod(period: string) {
+    if (!selectedId) return
+    const prof = profiles.find((p) => p.profile_id === selectedId)
+    setSnapshotPeriod(period)
+    setSnapshotOpen(true)
+    setSnapshotDetail(null)
+    setSnapshotLoading(true)
+    setSnapshotError(null)
+    try {
+      const detail = await fetchTrendSnapshot(apiBase, selectedId, period, {
+        userId: prof?.user_id,
+      })
+      setSnapshotDetail(detail)
+    } catch (e) {
+      setSnapshotDetail(null)
+      setSnapshotError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e))
+    } finally {
+      setSnapshotLoading(false)
+    }
+  }
+
+  async function handleDeleteProfile() {
+    if (!selectedId || !selectedProfile) return
+    const name = profileDisplayName(selectedProfile)
+    if (
+      !window.confirm(
+        `Удалить направление «${name}» вместе со всеми снимками и расписаниями? Это необратимо.`,
+      )
+    ) {
+      return
+    }
+    setDeletingProfile(true)
+    setError(null)
+    try {
+      await deleteTrendProfile(apiBase, selectedId, { internalKey: getMonthlyInternalKey() })
+      setSnapshotOpen(false)
+      setSelectedId(null)
+      await loadProfiles()
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e))
+    } finally {
+      setDeletingProfile(false)
+    }
+  }
+
   async function handleSaveLabel(e: React.FormEvent) {
     e.preventDefault()
     if (!selectedId) return
@@ -218,9 +281,9 @@ export function TrendsPage() {
               'Сводные карточки, столбцы+линия по размеру топа, отдельно — прирост к прошлому месяцу, площадной тренд и таблица.',
           },
           {
-            title: 'Подпись профиля',
+            title: 'Настройки направления',
             detail:
-              'Можно задать удобное имя и заметку для отображения в списке. Если на сервере включена проверка служебного ключа — используйте тот же ключ, что в «Настройки».',
+              'Имя и заметка — здесь, в карточке профиля. Темы поиска, новый снимок и расписание — на странице дайджеста по ссылке «Изменить темы и запуск».',
           },
         ]}
       />
@@ -235,6 +298,14 @@ export function TrendsPage() {
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
+      ) : null}
+
+      {!loadingList && profiles.length > 0 ? (
+        <TrendProfilesOverview
+          profiles={profiles}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+        />
       ) : null}
 
       <Card>
@@ -309,6 +380,105 @@ export function TrendsPage() {
           <Button type="button" variant="outline" size="sm" onClick={() => void loadProfiles()} disabled={loadingList}>
             Обновить список
           </Button>
+
+          {selectedId ? (
+            <div className="space-y-5 rounded-lg border border-border/80 bg-muted/15 p-4 print:hidden">
+              <div>
+                <h3 className="text-sm font-medium">
+                  Настройки:{' '}
+                  <span className="text-foreground">
+                    {selectedProfile
+                      ? profileDisplayName(selectedProfile)
+                      : selectedId}
+                  </span>
+                </h3>
+                <p className="mt-1 font-mono text-xs text-muted-foreground break-all">{selectedId}</p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Темы последнего снимка</p>
+                {selectedProfile?.topic_queries?.length ? (
+                  <ul className="list-inside list-disc space-y-1 text-sm text-muted-foreground">
+                    {selectedProfile.topic_queries.map((q) => (
+                      <li key={q} className="break-words">
+                        {q}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Снимков ещё не было — темы задаются при первом запуске на странице дайджеста.
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground text-pretty">
+                  Это темы из последнего сохранённого снимка. Новые темы в дайджесте влияют только на следующие
+                  запуски; графики ниже не пересчитываются задним числом.
+                </p>
+                <Button type="button" variant="secondary" size="sm" asChild>
+                  <Link to={digestSnapshotHref(selectedId)}>Изменить темы, снимок и расписание</Link>
+                </Button>
+              </div>
+
+              <form className="space-y-3 border-t border-border/60 pt-4" onSubmit={handleSaveLabel}>
+                <p className="text-sm font-medium">Подпись в интерфейсе</p>
+                <p className="text-xs text-muted-foreground">
+                  Имя и заметка для списка направлений. При проверке служебного ключа на сервере — тот же ключ, что в
+                  «Настройки».
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid gap-2 sm:col-span-2">
+                    <Label htmlFor="trend-label-name">Отображаемое имя</Label>
+                    <Input
+                      id="trend-label-name"
+                      value={labelName}
+                      onChange={(e) => setLabelName(e.target.value)}
+                      placeholder="Например: ВИЭ и сети"
+                    />
+                  </div>
+                  <div className="grid gap-2 sm:col-span-2">
+                    <Label htmlFor="trend-label-note">Заметка</Label>
+                    <Textarea
+                      id="trend-label-note"
+                      value={labelNote}
+                      onChange={(e) => setLabelNote(e.target.value)}
+                      rows={2}
+                      placeholder="Опционально"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button type="submit" size="sm" disabled={savingLabel || !labelName.trim()}>
+                    {savingLabel ? 'Сохранение…' : 'Сохранить подпись'}
+                  </Button>
+                  {labelMsg ? (
+                    <span
+                      className={cn(
+                        'text-sm',
+                        labelMsg === 'Сохранено' ? 'text-muted-foreground' : 'text-destructive',
+                      )}
+                    >
+                      {labelMsg}
+                    </span>
+                  ) : null}
+                </div>
+              </form>
+
+              <div className="border-t border-border/60 pt-4">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  disabled={deletingProfile}
+                  onClick={() => void handleDeleteProfile()}
+                >
+                  {deletingProfile ? 'Удаление…' : 'Удалить направление'}
+                </Button>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Удаляются все снимки и записи расписания для этого profile_id.
+                </p>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -336,7 +506,12 @@ export function TrendsPage() {
             {loadingSeries ? (
               <p className="text-sm text-muted-foreground">Загрузка ряда…</p>
             ) : points.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Нет точек для этого профиля.</p>
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">Нет точек для этого профиля.</p>
+                <Button type="button" variant="outline" size="sm" className="print:hidden" asChild>
+                  <Link to={digestSnapshotHref(selectedId)}>Запустить первый снимок</Link>
+                </Button>
+              </div>
             ) : (
               <>
                 {profiles.length > 1 ? (
@@ -396,6 +571,7 @@ export function TrendsPage() {
                       <TableHead className="text-right">Работ в топе</TableHead>
                       <TableHead className="hidden text-right sm:table-cell">Δ к прошлому</TableHead>
                       <TableHead className="hidden text-right md:table-cell">Δ %</TableHead>
+                      <TableHead className="text-right print:hidden">Снимок</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -419,48 +595,35 @@ export function TrendsPage() {
                         >
                           {p.pct_change_vs_prev == null ? '—' : `${p.pct_change_vs_prev > 0 ? '+' : ''}${p.pct_change_vs_prev}%`}
                         </TableCell>
+                        <TableCell className="text-right print:hidden">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => void openSnapshotPeriod(p.period)}
+                          >
+                            Открыть
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </>
             )}
-
-            <form className="space-y-3 border-t border-border/60 pt-6" onSubmit={handleSaveLabel}>
-              <p className="text-sm font-medium">Подпись в интерфейсе</p>
-              <p className="text-xs text-muted-foreground">
-                Сохраняется на сервере. Если администратор включил проверку служебного ключа для автоматических
-                запусков, укажите тот же ключ в «Настройки», что и для периодического дайджеста.
-              </p>
-              <div className="grid gap-2">
-                <Label htmlFor="trend-label-name">Отображаемое имя</Label>
-                <Input
-                  id="trend-label-name"
-                  value={labelName}
-                  onChange={(e) => setLabelName(e.target.value)}
-                  placeholder="Например: ВИЭ и сети"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="trend-label-note">Заметка</Label>
-                <Textarea
-                  id="trend-label-note"
-                  value={labelNote}
-                  onChange={(e) => setLabelNote(e.target.value)}
-                  rows={2}
-                  placeholder="Опционально"
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button type="submit" size="sm" disabled={savingLabel || !labelName.trim()}>
-                  {savingLabel ? 'Сохранение…' : 'Сохранить подпись'}
-                </Button>
-                {labelMsg ? <span className="text-sm text-muted-foreground">{labelMsg}</span> : null}
-              </div>
-            </form>
           </CardContent>
         </Card>
       ) : null}
+
+      <TrendSnapshotSheet
+        open={snapshotOpen}
+        onOpenChange={setSnapshotOpen}
+        period={snapshotPeriod}
+        detail={snapshotDetail}
+        loading={snapshotLoading}
+        error={snapshotError}
+      />
     </div>
   )
 }

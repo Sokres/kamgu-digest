@@ -107,6 +107,8 @@ curl -s http://localhost:8080/digests/periodic \
 
 - **`GET /trends/profiles`** — все `profile_id` с числом снимков, последним периодом и размером топа в последнем снимке.
 - **`GET /trends/profiles/{profile_id}/series`** — помесячно: число работ в топе (`works` в payload), дельта и % к предыдущему сохранённому периоду.
+- **`GET /trends/profiles/{profile_id}/snapshots/{period}`** — сохранённый снимок за `YYYY-MM` (текст дайджеста — в payload с новых запусков).
+- **`DELETE /trends/profiles/{profile_id}`** — профиль, все снимки и расписания для него; нужен **`X-Internal-Key`** при проверке cron-секрета.
 - **`PUT /trends/profiles/{profile_id}/label`** — подпись и заметка для UI; при **`MONTHLY_DIGEST_CRON_SECRET`** нужен заголовок **`X-Internal-Key`** (как у ежемесячного дайджеста).
 
 Во фронте KamGU: страница **«Тренды»** (`/trends`).

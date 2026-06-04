@@ -3,8 +3,10 @@ import tempfile
 from pathlib import Path
 
 from digest.snapshot_store import (
+    delete_digest_profile,
     digest_profile_exists_for_user,
     fetch_latest_snapshot_before,
+    fetch_snapshot_for_period,
     init_snapshot_schema,
     insert_digest_profile,
     list_period_metrics_for_profile,
@@ -134,3 +136,30 @@ def test_legacy_profile_id_migrates_to_uuid():
             assert row is not None
             assert row[0] == new_pid
             assert digest_profile_exists_for_user(conn, uid, new_pid)
+
+
+def test_fetch_snapshot_for_period_and_delete_profile():
+    with tempfile.TemporaryDirectory() as td:
+        url = f"sqlite:///{Path(td) / 'sn.db'}"
+        uid = _LEGACY
+        with snapshot_connection(url) as conn:
+            init_snapshot_schema(conn)
+            pid, _ = insert_digest_profile(conn, uid, "Del test", None)
+        payload = {
+            "version": 1,
+            "topic_queries": ["solar"],
+            "works": [{"dedupe_key": "k1", "title": "A", "rank": 1}],
+            "digest_ru": "RU text",
+            "digest_en": "EN text",
+        }
+        with snapshot_connection(url) as conn:
+            upsert_snapshot(conn, uid, pid, "2025-04", payload)
+        with snapshot_connection(url) as conn:
+            row = fetch_snapshot_for_period(conn, uid, pid, "2025-04")
+            assert row is not None
+            created_at, data = row
+            assert data["digest_ru"] == "RU text"
+            assert created_at
+            assert delete_digest_profile(conn, uid, pid) is True
+            assert fetch_snapshot_for_period(conn, uid, pid, "2025-04") is None
+            assert digest_profile_exists_for_user(conn, uid, pid) is False

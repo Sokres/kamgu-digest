@@ -202,23 +202,6 @@ async def run_monthly_digest(req: MonthlyDigestRequest, user_id: str) -> Monthly
         if FIXED_DISCLAIMER_EN.strip() not in digest_en:
             digest_en = FIXED_DISCLAIMER_EN + digest_en
 
-    payload = {
-        "version": SNAPSHOT_PAYLOAD_VERSION,
-        "profile_id": req.profile_id,
-        "period": period,
-        "topic_queries": req.topic_queries,
-        "works": [w.model_dump() for w in current_snapshot_rows],
-    }
-    snapshot_saved = False
-    try:
-        with snapshot_connection(settings.snapshot_database_url) as conn:
-            init_snapshot_schema(conn)
-            upsert_snapshot(conn, user_id, req.profile_id, period, payload)
-        snapshot_saved = True
-    except Exception as e:
-        logger.exception("Snapshot save failed: %s", e)
-        meta_warnings.append(f"snapshot_save_failed:{e}")
-
     elapsed = time.perf_counter() - t0
     meta = MonthlyDigestMeta(
         digest_mode=req.digest_mode,
@@ -235,10 +218,37 @@ async def run_monthly_digest(req: MonthlyDigestRequest, user_id: str) -> Monthly
         profile_id=req.profile_id,
         period=period,
         compared_period=compared_period,
-        snapshot_saved=snapshot_saved,
+        snapshot_saved=False,
         oa_fulltext_fetched=oa_n,
         two_stage_llm=two_stage,
     )
+    payload = {
+        "version": SNAPSHOT_PAYLOAD_VERSION,
+        "profile_id": req.profile_id,
+        "period": period,
+        "topic_queries": req.topic_queries,
+        "works": [w.model_dump() for w in current_snapshot_rows],
+        "digest_ru": digest_ru,
+        "digest_en": digest_en,
+        "publications_used": [p.model_dump() for p in ranked],
+        "article_cards": [c.model_dump() for c in llm.article_cards],
+        "structured_delta": structured.model_dump(),
+        "meta": meta.model_dump(),
+    }
+    snapshot_saved = False
+    try:
+        with snapshot_connection(settings.snapshot_database_url) as conn:
+            init_snapshot_schema(conn)
+            upsert_snapshot(conn, user_id, req.profile_id, period, payload)
+        snapshot_saved = True
+    except Exception as e:
+        logger.exception("Snapshot save failed: %s", e)
+        meta_warnings.append(f"snapshot_save_failed:{e}")
+
+    meta = meta.model_copy(
+        update={"snapshot_saved": snapshot_saved, "warnings": meta_warnings},
+    )
+    payload["meta"] = meta.model_dump()
 
     return MonthlyDigestResponse(
         publications_used=ranked,

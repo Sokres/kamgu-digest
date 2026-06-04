@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom'
 
 import { DigestResultView } from '@/components/DigestResultView'
+import { StructuredDeltaView } from '@/components/StructuredDeltaView'
 import { PageOnboarding } from '@/components/PageOnboarding'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -196,9 +197,15 @@ export function SavedDigestsPage() {
           <div className="space-y-2">
             <h2 className="text-xl font-semibold tracking-tight">{detail.title}</h2>
             <p className="text-sm text-muted-foreground">{formatWhen(detail.created_at)}</p>
-            {detail.request_snapshot?.topic_queries?.length ? (
+            {detail.request_snapshot?.topic_queries?.length ||
+            detail.monthly_request_snapshot?.topic_queries?.length ? (
               <p className="text-xs text-muted-foreground">
-                Темы: {detail.request_snapshot.topic_queries.join(' · ')}
+                Темы:{' '}
+                {(
+                  detail.monthly_request_snapshot?.topic_queries ??
+                  detail.request_snapshot?.topic_queries ??
+                  []
+                ).join(' · ')}
               </p>
             ) : null}
           </div>
@@ -251,7 +258,17 @@ export function SavedDigestsPage() {
           </Card>
         ) : null}
 
-        <DigestResultView loading={loading} error={error} data={detail?.digest_response ?? undefined} />
+        <DigestResultView
+          loading={loading}
+          error={error}
+          data={detail?.monthly_digest ?? detail?.digest_response ?? undefined}
+        />
+        {detail?.monthly_digest?.structured_delta ? (
+          <div className="mt-10 space-y-4">
+            <h3 className="text-lg font-heading font-medium">Структурированные тренды</h3>
+            <StructuredDeltaView delta={detail.monthly_digest.structured_delta} />
+          </div>
+        ) : null}
       </div>
     )
   }
@@ -264,7 +281,7 @@ export function SavedDigestsPage() {
           {
             title: 'Хранение',
             detail:
-              'Записи хранятся на сервере вместе со снимками трендов. После разового дайджеста нажмите «Сохранить» на странице дайджеста.',
+              'Записи хранятся на сервере. Сохраняйте разовый дайджест или результат снимка с вкладки «Снимок».',
           },
           {
             title: 'Просмотр и ссылка',

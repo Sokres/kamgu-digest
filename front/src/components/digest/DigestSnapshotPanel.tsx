@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import { DigestPresetsBar } from '@/components/DigestPresetsBar'
 import { ProfileDirectionPicker, profileDisplayName } from '@/components/ProfileDirectionPicker'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -156,6 +157,15 @@ export function DigestSnapshotPanel({
               </Button>
             </div>
           </div>
+
+          <DigestPresetsBar onApply={form.applyPreset} snapshot={form.presetSnapshot} />
+
+          <Alert className="print:hidden">
+            <AlertDescription className="text-pretty text-sm">
+              Темы и лимиты из общего блока выше применяются к следующему снимку и новым записям расписания. Уже
+              сохранённые точки на странице «Тренды» не пересчитываются.
+            </AlertDescription>
+          </Alert>
 
           <div className="space-y-2">
             <Label htmlFor="snap-force">Период снимка (YYYY-MM, необязательно)</Label>

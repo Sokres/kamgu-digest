@@ -3,6 +3,7 @@ import { Link, useOutletContext, useSearchParams } from 'react-router-dom'
 
 import { DigestOnceExtras } from '@/components/digest/DigestOnceExtras'
 import { DigestSchedulePanel } from '@/components/digest/DigestSchedulePanel'
+import { DigestScheduleStatus } from '@/components/digest/DigestScheduleStatus'
 import { DigestSharedParams } from '@/components/digest/DigestSharedParams'
 import { DigestSnapshotPanel } from '@/components/digest/DigestSnapshotPanel'
 import { DigestResultView } from '@/components/DigestResultView'
@@ -22,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useDigestFormState } from '@/hooks/useDigestFormState'
+import { useDigestSchedules } from '@/hooks/useDigestSchedules'
 import { ApiError, fetchTrendProfiles, saveDigest } from '@/lib/api'
 import { DIGEST_TABS, parseDigestTab, type DigestTabId } from '@/lib/digestTabs'
 import { getMonthlyInternalKey } from '@/lib/settings'
@@ -32,6 +34,7 @@ export function DigestPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = parseDigestTab(searchParams.get('tab'))
   const form = useDigestFormState()
+  const schedules = useDigestSchedules(apiBase, form.internalKeyField)
 
   const [trendProfiles, setTrendProfiles] = useState<TrendProfileSummary[]>([])
   const [profilesLoading, setProfilesLoading] = useState(false)
@@ -75,26 +78,29 @@ export function DigestPage() {
   )
 
   useEffect(() => {
-    void loadTrendProfilesList()
-  }, [loadTrendProfilesList])
+    const profileFromUrl = searchParams.get('profile')?.trim()
+    void loadTrendProfilesList(profileFromUrl || undefined)
+  }, [loadTrendProfilesList, searchParams])
 
   function setTab(tab: DigestTabId) {
     setSearchParams(tab === 'once' ? {} : { tab }, { replace: true })
   }
 
-  function openSaveSheet() {
+  function openSaveSheet(mode: 'once' | 'snapshot') {
     const q = form.topicQueriesFromLines()
     const head = q[0]?.slice(0, 60) ?? 'Дайджест'
-    setSaveTitle(
-      `${new Date().toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })} — ${head}`,
-    )
+    const period = snapData?.meta?.period
+    const prefix =
+      mode === 'snapshot' && period
+        ? `Снимок ${period}`
+        : new Date().toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
+    setSaveTitle(`${prefix} — ${head}`)
     setSaveError(null)
     setSavedId(null)
     setSaveOpen(true)
   }
 
   async function handleSaveToServer() {
-    if (!onceData || !lastRequestSnapshot) return
     const t = saveTitle.trim()
     if (!t) {
       setSaveError('Введите название.')
@@ -103,12 +109,28 @@ export function DigestPage() {
     setSaveBusy(true)
     setSaveError(null)
     try {
-      const created = await saveDigest(apiBase, {
-        title: t,
-        digest_response: onceData,
-        request_snapshot: lastRequestSnapshot,
-      })
-      setSavedId(created.id)
+      if (activeTab === 'snapshot' && snapData) {
+        const built = form.buildMonthlyRequest(form.selectedProfileId)
+        if (!built.ok) {
+          setSaveError(built.message)
+          return
+        }
+        const created = await saveDigest(apiBase, {
+          title: t,
+          monthly_digest: snapData,
+          monthly_request_snapshot: built.body,
+        })
+        setSavedId(created.id)
+      } else if (onceData && lastRequestSnapshot) {
+        const created = await saveDigest(apiBase, {
+          title: t,
+          digest_response: onceData,
+          request_snapshot: lastRequestSnapshot,
+        })
+        setSavedId(created.id)
+      } else {
+        setSaveError('Нет данных для сохранения.')
+      }
     } catch (err) {
       setSaveError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err))
     } finally {
@@ -142,9 +164,9 @@ export function DigestPage() {
               'Разовый — без сохранения в тренды. Снимок — запись в базу и сравнение с прошлым периодом на вкладке «Тренды».',
           },
           {
-            title: 'Расписание у направления',
+            title: 'Расписание и пресеты',
             detail:
-              'У каждого направления своё расписание автозапуска снимка — настройка под выбранным профилем на вкладке «Снимок».',
+              'Пресеты параметров общие для разового запуска и снимка. У каждого направления — своё расписание автозапуска.',
           },
         ]}
       />
@@ -175,7 +197,13 @@ export function DigestPage() {
                 <p className="mt-1 text-xs text-muted-foreground/90">Текст дайджеста и карточки источников</p>
               </div>
               {onceData && !onceLoading ? (
-                <Button type="button" variant="secondary" size="sm" className="print:hidden" onClick={openSaveSheet}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="print:hidden"
+                  onClick={() => openSaveSheet('once')}
+                >
                   Сохранить в архив
                 </Button>
               ) : null}
@@ -209,16 +237,41 @@ export function DigestPage() {
             setLoading={setSnapLoading}
             onResult={handleSnapResult}
           />
+          <DigestScheduleStatus
+            profileId={form.selectedProfileId}
+            trendProfiles={trendProfiles}
+            digestSchedules={schedules.digestSchedules}
+            loading={schedules.loading}
+          />
           <DigestSchedulePanel
             apiBase={apiBase}
             form={form}
             trendProfiles={trendProfiles}
             profileId={form.selectedProfileId}
+            digestSchedules={schedules.digestSchedules}
+            schedulesLoading={schedules.loading}
+            schedulesError={schedules.error}
+            setSchedulesError={schedules.setError}
+            onReloadSchedules={schedules.reload}
+            scheduleInternalKey={schedules.scheduleInternalKey}
           />
           <section className="space-y-4">
-            <div>
-              <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Результат</h2>
-              <p className="mt-1 text-xs text-muted-foreground/90">Дайджест, метаданные и структурированные тренды</p>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Результат</h2>
+                <p className="mt-1 text-xs text-muted-foreground/90">Дайджест, метаданные и структурированные тренды</p>
+              </div>
+              {snapData && !snapLoading ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="print:hidden"
+                  onClick={() => openSaveSheet('snapshot')}
+                >
+                  Сохранить в архив
+                </Button>
+              ) : null}
             </div>
             {!snapLoading && !snapData && !snapError ? (
               <p className="rounded-lg border border-dashed border-border/80 bg-muted/15 px-4 py-3 text-sm text-muted-foreground print:hidden">
@@ -284,7 +337,11 @@ export function DigestPage() {
             <Button type="button" variant="outline" onClick={() => setSaveOpen(false)}>
               Закрыть
             </Button>
-            <Button type="button" disabled={saveBusy || !!savedId} onClick={() => void handleSaveToServer()}>
+            <Button
+              type="button"
+              disabled={saveBusy || !!savedId || (activeTab === 'snapshot' ? !snapData : !onceData)}
+              onClick={() => void handleSaveToServer()}
+            >
               {saveBusy ? 'Сохранение…' : 'Сохранить'}
             </Button>
           </SheetFooter>

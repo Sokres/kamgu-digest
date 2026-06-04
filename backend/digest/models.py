@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 DigestMode = Literal["peer_reviewed", "web_snippets"]
@@ -193,16 +195,40 @@ class SavedDigestEnvelope(BaseModel):
     """Тело payload_json в saved_digests."""
 
     version: Literal[1] = 1
-    digest_response: DigestResponse
+    digest_response: DigestResponse | None = None
+    monthly_digest: MonthlyDigestResponse | None = None
     request: DigestRequest | None = None
+    monthly_request: MonthlyDigestRequest | None = None
+
+    def resolved_digest_response(self) -> DigestResponse:
+        if self.digest_response is not None:
+            return self.digest_response
+        if self.monthly_digest is not None:
+            m = self.monthly_digest
+            return DigestResponse(
+                publications_used=m.publications_used,
+                article_cards=m.article_cards,
+                digest_ru=m.digest_ru,
+                digest_en=m.digest_en,
+                meta=m.meta,
+            )
+        raise ValueError("saved digest has no response body")
 
 
 class SavedDigestCreate(BaseModel):
     """POST /saved-digests."""
 
     title: str = Field(..., min_length=1, max_length=200)
-    digest_response: DigestResponse
+    digest_response: DigestResponse | None = None
+    monthly_digest: MonthlyDigestResponse | None = None
     request_snapshot: DigestRequest | None = None
+    monthly_request_snapshot: MonthlyDigestRequest | None = None
+
+    @model_validator(mode="after")
+    def require_one_digest(self) -> SavedDigestCreate:
+        if self.digest_response is None and self.monthly_digest is None:
+            raise ValueError("Нужен digest_response или monthly_digest.")
+        return self
 
 
 class SavedDigestListItem(BaseModel):
@@ -220,7 +246,9 @@ class SavedDigestOut(BaseModel):
     title: str
     created_at: str
     digest_response: DigestResponse
+    monthly_digest: MonthlyDigestResponse | None = None
     request_snapshot: DigestRequest | None = None
+    monthly_request_snapshot: MonthlyDigestRequest | None = None
     public_share_active: bool = False
 
 
@@ -558,6 +586,24 @@ class TrendSeriesPoint(BaseModel):
 class TrendSeriesResponse(BaseModel):
     profile_id: str
     points: list[TrendSeriesPoint]
+
+
+class TrendSnapshotDetail(BaseModel):
+    """GET /trends/profiles/{profile_id}/snapshots/{period} — сохранённый снимок."""
+
+    profile_id: str
+    period: str
+    created_at: str
+    topic_queries: list[str] = Field(default_factory=list)
+    work_count: int = 0
+    digest_available: bool = False
+    digest_ru: str = ""
+    digest_en: str = ""
+    publications_used: list[PublicationInput] = Field(default_factory=list)
+    article_cards: list[ArticleCard] = Field(default_factory=list)
+    structured_delta: MonthlyStructuredDelta | None = None
+    meta: MonthlyDigestMeta | None = None
+    works: list[SnapshotWorkRecord] = Field(default_factory=list)
 
 
 class TrendProfileLabelUpdate(BaseModel):

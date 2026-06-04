@@ -48,7 +48,9 @@ async def get_public_saved_digest(
         id=sid,
         title=title,
         created_at=created_at,
-        digest_response=env.digest_response,
+        digest_response=env.resolved_digest_response(),
+        monthly_digest=env.monthly_digest,
         request_snapshot=env.request,
+        monthly_request_snapshot=env.monthly_request,
         public_share_active=True,
     )
