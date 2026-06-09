@@ -606,6 +606,61 @@ class TrendSnapshotDetail(BaseModel):
     works: list[SnapshotWorkRecord] = Field(default_factory=list)
 
 
+class TrendCitationGainHighlight(BaseModel):
+    title: str
+    delta: int
+
+
+class TrendConceptShiftHighlight(BaseModel):
+    name: str
+    delta: float
+
+
+class TrendPeriodHighlight(BaseModel):
+    period: str
+    created_at: str
+    work_count: int
+    is_baseline: bool = False
+    compared_period: str | None = None
+    entered_count: int = 0
+    left_count: int = 0
+    top_citation_gain: TrendCitationGainHighlight | None = None
+    top_concept_shift: TrendConceptShiftHighlight | None = None
+
+
+class TrendConceptEvolutionPoint(BaseModel):
+    period: str
+    shares: dict[str, float] = Field(default_factory=dict)
+
+
+class TrendLatestSnapshotSummary(BaseModel):
+    period: str
+    created_at: str
+    digest_available: bool = False
+    digest_ru: str = ""
+    digest_en: str = ""
+    structured_delta: MonthlyStructuredDelta | None = None
+
+
+class TrendHighlightsResponse(BaseModel):
+    profile_id: str
+    topic_queries: list[str] = Field(default_factory=list)
+    points: list[TrendPeriodHighlight] = Field(default_factory=list)
+    latest_snapshot: TrendLatestSnapshotSummary | None = None
+    concept_evolution: list[TrendConceptEvolutionPoint] = Field(default_factory=list)
+
+
+class TrendAnalysisResponse(BaseModel):
+    profile_id: str
+    analyzed_through_period: str | None = None
+    analysis_ru: str = ""
+    analysis_en: str = ""
+    overview_ru: str = ""
+    overview_en: str = ""
+    cached: bool = False
+    snapshot_count: int = 0
+
+
 class TrendProfileLabelUpdate(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=160)
     note: str = Field("", max_length=2000)

@@ -126,6 +126,26 @@ Same JSON shape as the standard digest:
 }
 Include one article_card per input publication, in the same order as given."""
 
+SYSTEM_TREND_SERIES = """You are a research assistant writing a CROSS-PERIOD trend analysis for a research lab direction.
+You receive period_highlights (monthly snapshot comparisons) and concept_evolution (OpenAlex concept shares over time).
+Rules:
+- Use ONLY facts present in period_highlights and concept_evolution. Do not invent citation counts, ranks, or concept shares.
+- If fewer than 2 non-baseline comparison periods exist, state that longitudinal comparison is limited.
+- In analysis_ru and analysis_en, use Markdown with these sections in order:
+  1) **Disclaimer** (one short paragraph): metrics come from saved snapshot comparisons of this corpus; citation data lag; sample is the lab's fixed top-K, not the whole field.
+  2) **Overall dynamics** — trend of work_count, churn (entered/left top-K), stability vs volatility across periods.
+  3) **Citation and ranking shifts** — recurring leaders, largest citation gains, papers entering/leaving top-K (only from provided data).
+  4) **Concept evolution** — which OpenAlex concepts gained or lost share across the series.
+  5) **Discussion hypotheses** — clearly label as hypotheses for expert discussion, NOT firm predictions.
+- Respond with a single JSON object, no markdown fences.
+JSON shape:
+{
+  "overview_ru": "2-4 sentences",
+  "overview_en": "2-4 sentences",
+  "analysis_ru": "Markdown sections as above",
+  "analysis_en": "Same structure in English"
+}"""
+
 SYSTEM_REDUCE_MONTHLY = """You are a research assistant writing a MONTHLY trend digest for a research lab.
 You receive structured_delta (metric comparisons between snapshots) and paper_summaries (short per-paper notes derived from abstracts, excerpts, or web_snippet text from Tavily — not full papers).
 Rules:
@@ -511,6 +531,52 @@ async def generate_digest_llm(
     user_payload = _digest_user_payload(publications, topic_queries)
     data = await _chat_json_to_dict(SYSTEM, user_payload)
     return _llm_result_from_raw(data), False
+
+
+def _trend_series_user_payload(
+    *,
+    display_name: str,
+    topic_queries: list[str],
+    period_highlights: list[dict[str, Any]],
+    concept_evolution: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "direction_name": display_name,
+        "topics": topic_queries,
+        "period_highlights": period_highlights,
+        "concept_evolution": concept_evolution,
+    }
+
+
+def _trend_analysis_from_raw(data: dict[str, Any]) -> dict[str, str]:
+    return {
+        "overview_ru": str(data.get("overview_ru") or ""),
+        "overview_en": str(data.get("overview_en") or ""),
+        "analysis_ru": str(data.get("analysis_ru") or data.get("digest_ru") or ""),
+        "analysis_en": str(data.get("analysis_en") or data.get("digest_en") or ""),
+    }
+
+
+async def generate_trend_series_analysis_llm(
+    *,
+    display_name: str,
+    topic_queries: list[str],
+    period_highlights: list[dict[str, Any]],
+    concept_evolution: list[dict[str, Any]],
+) -> dict[str, str]:
+    user_payload = _trend_series_user_payload(
+        display_name=display_name,
+        topic_queries=topic_queries,
+        period_highlights=period_highlights,
+        concept_evolution=concept_evolution,
+    )
+    data = await _chat_json_to_dict(SYSTEM_TREND_SERIES, user_payload)
+    result = _trend_analysis_from_raw(data)
+    if result["overview_ru"] and result["analysis_ru"] and result["overview_ru"] not in result["analysis_ru"]:
+        result["analysis_ru"] = f"**Обзор:** {result['overview_ru']}\n\n{result['analysis_ru']}"
+    if result["overview_en"] and result["analysis_en"] and result["overview_en"] not in result["analysis_en"]:
+        result["analysis_en"] = f"**Overview:** {result['overview_en']}\n\n{result['analysis_en']}"
+    return result
 
 
 async def generate_monthly_digest_llm(

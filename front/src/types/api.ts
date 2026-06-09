@@ -259,6 +259,63 @@ export interface TrendSeriesResponse {
   points: TrendSeriesPoint[]
 }
 
+export interface TrendCitationGainHighlight {
+  title: string
+  delta: number
+}
+
+export interface TrendConceptShiftHighlight {
+  name: string
+  delta: number
+}
+
+export interface TrendPeriodHighlight {
+  period: string
+  created_at: string
+  work_count: number
+  is_baseline?: boolean
+  compared_period?: string | null
+  entered_count?: number
+  left_count?: number
+  top_citation_gain?: TrendCitationGainHighlight | null
+  top_concept_shift?: TrendConceptShiftHighlight | null
+}
+
+export interface TrendConceptEvolutionPoint {
+  period: string
+  shares: Record<string, number>
+}
+
+export interface TrendLatestSnapshotSummary {
+  period: string
+  created_at: string
+  digest_available?: boolean
+  digest_ru?: string
+  digest_en?: string
+  structured_delta?: MonthlyStructuredDelta | null
+}
+
+/** GET /trends/profiles/:id/highlights */
+export interface TrendHighlightsResponse {
+  profile_id: string
+  topic_queries: string[]
+  points: TrendPeriodHighlight[]
+  latest_snapshot?: TrendLatestSnapshotSummary | null
+  concept_evolution: TrendConceptEvolutionPoint[]
+}
+
+/** POST /trends/profiles/:id/analysis */
+export interface TrendAnalysisResponse {
+  profile_id: string
+  analyzed_through_period?: string | null
+  analysis_ru: string
+  analysis_en: string
+  overview_ru: string
+  overview_en: string
+  cached: boolean
+  snapshot_count: number
+}
+
 /** PUT /trends/profiles/:id/label */
 export interface TrendProfileLabelUpdate {
   display_name: string

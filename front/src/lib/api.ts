@@ -19,6 +19,8 @@ import type {
   SavedDigestListItem,
   SavedDigestOut,
   SavedDigestShareResponse,
+  TrendAnalysisResponse,
+  TrendHighlightsResponse,
   TrendProfileLabelUpdate,
   TrendProfileSummary,
   TrendSnapshotDetail,
@@ -725,6 +727,51 @@ export async function fetchTrendSnapshot(
   )
   if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
   return r.json() as Promise<TrendSnapshotDetail>
+}
+
+export async function fetchTrendHighlights(
+  baseUrl: string,
+  profileId: string,
+  options?: { userId?: string; signal?: AbortSignal; accessToken?: string },
+): Promise<TrendHighlightsResponse> {
+  const enc = encodeURIComponent(profileId)
+  const q = options?.userId?.trim() ? `?user_id=${encodeURIComponent(options.userId.trim())}` : ''
+  const r = await fetchWithAuthRetry(baseUrl, () =>
+    fetch(`${baseUrl}/trends/profiles/${enc}/highlights${q}`, {
+      signal: options?.signal,
+      headers: authOnlyHeaders(options),
+    }),
+  )
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+  return r.json() as Promise<TrendHighlightsResponse>
+}
+
+export async function postTrendAnalysis(
+  baseUrl: string,
+  profileId: string,
+  options?: {
+    force?: boolean
+    internalKey?: string
+    signal?: AbortSignal
+    accessToken?: string
+  },
+): Promise<TrendAnalysisResponse> {
+  const enc = encodeURIComponent(profileId)
+  const q = options?.force ? '?force=true' : ''
+  let r: Response
+  try {
+    r = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/trends/profiles/${enc}/analysis${q}`, {
+        method: 'POST',
+        headers: apiHeaders({}, options),
+        signal: options?.signal,
+      }),
+    )
+  } catch (e) {
+    mapFetchError(e)
+  }
+  if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+  return r.json() as Promise<TrendAnalysisResponse>
 }
 
 export async function deleteTrendProfile(

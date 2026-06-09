@@ -191,3 +191,80 @@ def test_rate_limit_429(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
         assert tc.post("/digests", json={"topic_queries": ["b"]}).status_code == 200
         r3 = tc.post("/digests", json={"topic_queries": ["c"]})
     assert r3.status_code == 429
+
+
+def test_get_trends_highlights(client: TestClient) -> None:
+    pr = client.post("/trends/profiles", json={"display_name": "Highlights test", "note": ""})
+    assert pr.status_code == 200
+    pid = pr.json()["profile_id"]
+    from digest.snapshot_store import init_snapshot_schema, snapshot_connection, upsert_snapshot
+
+    payload = {
+        "version": 1,
+        "topic_queries": ["wind"],
+        "works": [{"dedupe_key": "w1", "title": "Wind paper", "rank": 1}],
+        "structured_delta": {
+            "profile_id": pid,
+            "current_period": "2025-03",
+            "is_baseline": True,
+        },
+    }
+    with snapshot_connection(settings.snapshot_database_url) as conn:
+        init_snapshot_schema(conn)
+        upsert_snapshot(conn, "__legacy__", pid, "2025-03", payload)
+
+    r = client.get(f"/trends/profiles/{pid}/highlights")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["profile_id"] == pid
+    assert len(data["points"]) == 1
+    assert data["points"][0]["work_count"] == 1
+    assert data["latest_snapshot"]["period"] == "2025-03"
+
+
+def test_post_trends_analysis_mocked(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.api.routes.trends.effective_llm_api_key", lambda: True)
+    pr = client.post("/trends/profiles", json={"display_name": "Analysis test", "note": ""})
+    pid = pr.json()["profile_id"]
+    from digest.snapshot_store import init_snapshot_schema, snapshot_connection, upsert_snapshot
+
+    for period in ("2025-01", "2025-02"):
+        payload = {
+            "version": 1,
+            "topic_queries": ["grid"],
+            "works": [{"dedupe_key": f"k-{period}", "title": f"P {period}", "rank": 1}],
+            "structured_delta": {
+                "profile_id": pid,
+                "current_period": period,
+                "compared_period": None if period == "2025-01" else "2025-01",
+                "is_baseline": period == "2025-01",
+                "entered_top_k": [],
+                "left_top_k": [],
+                "top_by_citation_gain": [],
+                "concept_share_deltas": [],
+            },
+        }
+        with snapshot_connection(settings.snapshot_database_url) as conn:
+            init_snapshot_schema(conn)
+            upsert_snapshot(conn, "__legacy__", pid, period, payload)
+
+    mock_llm = AsyncMock(
+        return_value={
+            "overview_ru": "Обзор",
+            "overview_en": "Overview",
+            "analysis_ru": "Анализ RU",
+            "analysis_en": "Analysis EN",
+        }
+    )
+    with patch("app.api.routes.trends.generate_trend_series_analysis_llm", new=mock_llm):
+        r = client.post(f"/trends/profiles/{pid}/analysis")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["analysis_ru"]
+    assert body["snapshot_count"] == 2
+    assert body["cached"] is False
+
+    with patch("app.api.routes.trends.generate_trend_series_analysis_llm", new=mock_llm):
+        r2 = client.post(f"/trends/profiles/{pid}/analysis")
+    assert r2.status_code == 200
+    assert r2.json()["cached"] is True

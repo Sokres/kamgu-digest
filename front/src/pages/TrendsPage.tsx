@@ -2,10 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
 
 import { PageOnboarding } from '@/components/PageOnboarding'
-import { profileDisplayName } from '@/components/ProfileDirectionPicker'
+import { profileDisplayName, profileHasDisplayName } from '@/components/ProfileDirectionPicker'
+import { TrendActivityFeed } from '@/components/trends/TrendActivityFeed'
+import { TrendAnalysisPanel } from '@/components/trends/TrendAnalysisPanel'
+import { TrendConceptEvolutionChart } from '@/components/trends/TrendConceptEvolutionChart'
+import { TrendLatestSnapshotPanel } from '@/components/trends/TrendLatestSnapshotPanel'
 import { TrendProfilesOverview } from '@/components/trends/TrendProfilesOverview'
 import { TrendSnapshotSheet } from '@/components/trends/TrendSnapshotSheet'
-import { TrendAreaChart } from '@/components/TrendAreaChart'
 import { TrendCompareChart } from '@/components/TrendCompareChart'
 import { TrendDeltaBarChart } from '@/components/TrendDeltaBarChart'
 import { TrendKpiCards } from '@/components/TrendKpiCards'
@@ -29,15 +32,23 @@ import {
   ApiError,
   createTrendProfile,
   deleteTrendProfile,
+  fetchTrendHighlights,
   fetchTrendProfiles,
   fetchTrendSeries,
   fetchTrendSnapshot,
+  postTrendAnalysis,
   putTrendProfileLabel,
 } from '@/lib/api'
 import { deltaSignedClass } from '@/lib/deltaClass'
 import { digestSnapshotHref } from '@/lib/digestLinks'
 import { getMonthlyInternalKey } from '@/lib/settings'
-import type { TrendProfileSummary, TrendSeriesPoint, TrendSnapshotDetail } from '@/types/api'
+import type {
+  TrendAnalysisResponse,
+  TrendHighlightsResponse,
+  TrendProfileSummary,
+  TrendSeriesPoint,
+  TrendSnapshotDetail,
+} from '@/types/api'
 import { cn } from '@/lib/utils'
 
 const COMPARE_NONE = '__none__'
@@ -68,6 +79,14 @@ export function TrendsPage() {
   const [snapshotLoading, setSnapshotLoading] = useState(false)
   const [snapshotError, setSnapshotError] = useState<string | null>(null)
   const [deletingProfile, setDeletingProfile] = useState(false)
+
+  const [highlights, setHighlights] = useState<TrendHighlightsResponse | null>(null)
+  const [loadingHighlights, setLoadingHighlights] = useState(false)
+
+  const [analysis, setAnalysis] = useState<TrendAnalysisResponse | null>(null)
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false)
+  const [refreshingAnalysis, setRefreshingAnalysis] = useState(false)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
 
   const loadProfiles = useCallback(async (preferProfileId?: string) => {
     setLoadingList(true)
@@ -121,34 +140,79 @@ export function TrendsPage() {
   useEffect(() => {
     if (!selectedId) {
       setPoints([])
+      setHighlights(null)
+      setAnalysis(null)
       return
     }
     const prof = profiles.find((p) => p.profile_id === selectedId)
     let cancelled = false
     setLoadingSeries(true)
+    setLoadingHighlights(true)
     setError(null)
-    fetchTrendSeries(apiBase, selectedId, {
-      userId: prof?.user_id,
-    })
-      .then((res) => {
+    Promise.all([
+      fetchTrendSeries(apiBase, selectedId, { userId: prof?.user_id }),
+      fetchTrendHighlights(apiBase, selectedId, { userId: prof?.user_id }),
+    ])
+      .then(([seriesRes, highlightsRes]) => {
         if (!cancelled) {
-          setPoints(res.points)
+          setPoints(seriesRes.points)
+          setHighlights(highlightsRes)
           setError(null)
         }
       })
       .catch((e: unknown) => {
         if (!cancelled) {
           setPoints([])
+          setHighlights(null)
           setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e))
         }
       })
       .finally(() => {
-        if (!cancelled) setLoadingSeries(false)
+        if (!cancelled) {
+          setLoadingSeries(false)
+          setLoadingHighlights(false)
+        }
       })
     return () => {
       cancelled = true
     }
   }, [apiBase, selectedId, profiles])
+
+  const loadAnalysis = useCallback(
+    async (force = false) => {
+      if (!selectedId) return
+      if (force) {
+        setRefreshingAnalysis(true)
+      } else {
+        setLoadingAnalysis(true)
+      }
+      setAnalysisError(null)
+      try {
+        const res = await postTrendAnalysis(apiBase, selectedId, {
+          force,
+          internalKey: getMonthlyInternalKey(),
+        })
+        setAnalysis(res)
+      } catch (e) {
+        setAnalysis(null)
+        setAnalysisError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e))
+      } finally {
+        setLoadingAnalysis(false)
+        setRefreshingAnalysis(false)
+      }
+    },
+    [apiBase, selectedId],
+  )
+
+  useEffect(() => {
+    if (!selectedId || loadingSeries || loadingHighlights) return
+    if (points.length < 2) {
+      setAnalysis(null)
+      setAnalysisError(null)
+      return
+    }
+    void loadAnalysis(false)
+  }, [selectedId, points.length, loadingSeries, loadingHighlights, loadAnalysis])
 
   useEffect(() => {
     if (compareId !== COMPARE_NONE && compareId === selectedId) {
@@ -271,19 +335,19 @@ export function TrendsPage() {
         title="Тренды по сохранённым снимкам"
         steps={[
           {
-            title: 'Накопление данных',
+            title: 'ИИ-анализ',
             detail:
-              'Профили появляются после периодического дайджеста с тем же идентификатором профиля; чем больше запусков, тем полнее ряд.',
+              'При двух и более снимках LLM-агент формирует сводную интерпретацию динамики по всему ряду; результат кэшируется до появления нового периода.',
           },
           {
-            title: 'Графики и KPI',
+            title: 'Лента и метрики',
             detail:
-              'Сводные карточки, столбцы+линия по размеру топа, отдельно — прирост к прошлому месяцу, площадной тренд и таблица.',
+              'KPI, лента изменений (вошли/вышли, Δ цитирований, концепты), графики размера топа и эволюция OpenAlex-концептов.',
           },
           {
             title: 'Настройки направления',
             detail:
-              'Имя и заметка — здесь, в карточке профиля. Темы поиска, новый снимок и расписание — на странице дайджеста по ссылке «Изменить темы и запуск».',
+              'Имя и заметка — в карточке профиля ниже. Темы поиска, новый снимок и расписание — на странице дайджеста.',
           },
         ]}
       />
@@ -308,12 +372,152 @@ export function TrendsPage() {
         />
       ) : null}
 
+      {selectedId ? (
+        <>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex flex-wrap items-center gap-2">
+              Динамика
+              {selectedProfile && profileHasDisplayName(selectedProfile) ? (
+                <Badge variant="secondary" className="font-mono font-normal">
+                  {selectedProfile.profile_id}
+                </Badge>
+              ) : null}
+            </CardTitle>
+            <CardDescription>
+              ИИ-анализ, метрики изменений, графики размера топа и сравнение двух направлений.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {loadingSeries ? (
+              <p className="text-sm text-muted-foreground">Загрузка ряда…</p>
+            ) : points.length === 0 ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">Нет точек для этого профиля.</p>
+                <Button type="button" variant="outline" size="sm" className="print:hidden" asChild>
+                  <Link to={digestSnapshotHref(selectedId)}>Запустить первый снимок</Link>
+                </Button>
+              </div>
+            ) : (
+              <>
+                <TrendAnalysisPanel
+                  loading={loadingAnalysis && !analysis}
+                  error={analysisError}
+                  analysis={analysis}
+                  snapshotCount={points.length}
+                  onRefresh={() => void loadAnalysis(true)}
+                  refreshing={refreshingAnalysis}
+                />
+
+                <TrendLatestSnapshotPanel latest={highlights?.latest_snapshot} />
+
+                {profiles.length > 1 ? (
+                  <div className="grid max-w-md gap-2 print:hidden">
+                    <Label htmlFor="trend-compare">Сравнить с профилем</Label>
+                    <Select value={compareId} onValueChange={setCompareId}>
+                      <SelectTrigger id="trend-compare" className="w-full sm:w-[min(100%,380px)]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={COMPARE_NONE}>Не сравнивать</SelectItem>
+                        {profiles
+                          .filter((p) => p.profile_id !== selectedId)
+                          .map((p) => (
+                            <SelectItem key={p.profile_id} value={p.profile_id}>
+                              {profileDisplayName(p)}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    {compareId !== COMPARE_NONE && compareId !== selectedId && loadingCompare ? (
+                      <p className="text-xs text-muted-foreground">Загрузка ряда для сравнения…</p>
+                    ) : null}
+                    {compareId !== COMPARE_NONE &&
+                    compareId !== selectedId &&
+                    !loadingCompare &&
+                    comparePoints.length === 0 ? (
+                      <p className="text-xs text-amber-800 dark:text-amber-100/90">
+                        Для выбранного профиля нет точек — показан только график текущего.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="space-y-4 print:hidden">
+                  <TrendKpiCards points={points} highlights={highlights?.points} />
+                  <TrendActivityFeed points={highlights?.points ?? []} />
+                  <TrendConceptEvolutionChart evolution={highlights?.concept_evolution ?? []} />
+                  {showCompare ? (
+                    <TrendCompareChart
+                      seriesA={points}
+                      seriesB={comparePoints}
+                      labelA={selectedProfile ? profileDisplayName(selectedProfile) : selectedId ?? ''}
+                      labelB={compareProfile ? profileDisplayName(compareProfile) : compareId}
+                    />
+                  ) : (
+                    <TrendSeriesChart points={points} maxWork={maxWork} />
+                  )}
+                  <TrendDeltaBarChart points={points} />
+                </div>
+
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Период</TableHead>
+                      <TableHead className="text-right">Работ в топе</TableHead>
+                      <TableHead className="hidden text-right sm:table-cell">Δ к прошлому</TableHead>
+                      <TableHead className="hidden text-right md:table-cell">Δ %</TableHead>
+                      <TableHead className="text-right print:hidden">Снимок</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {points.map((p) => (
+                      <TableRow key={p.period}>
+                        <TableCell className="font-mono text-sm">{p.period}</TableCell>
+                        <TableCell className="text-right tabular-nums">{p.work_count}</TableCell>
+                        <TableCell
+                          className={cn(
+                            'hidden text-right sm:table-cell',
+                            deltaSignedClass(p.delta_vs_prev ?? null),
+                          )}
+                        >
+                          {p.delta_vs_prev == null ? '—' : p.delta_vs_prev > 0 ? `+${p.delta_vs_prev}` : String(p.delta_vs_prev)}
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            'hidden text-right md:table-cell',
+                            deltaSignedClass(p.pct_change_vs_prev ?? null),
+                          )}
+                        >
+                          {p.pct_change_vs_prev == null ? '—' : `${p.pct_change_vs_prev > 0 ? '+' : ''}${p.pct_change_vs_prev}%`}
+                        </TableCell>
+                        <TableCell className="text-right print:hidden">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => void openSnapshotPeriod(p.period)}
+                          >
+                            Открыть
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </>
+            )}
+          </CardContent>
+        </Card>
+        </>
+      ) : null}
+
       <Card>
         <CardHeader>
-          <CardTitle>Профили</CardTitle>
+          <CardTitle>Управление направлением</CardTitle>
           <CardDescription>
-            Направления создаются с человекочитаемым именем (UUID задаётся сервером). После первого сохранённого снимка
-            появятся точки на графиках.
+            Выбор — в блоке «Обзор направлений» выше. Здесь можно создать новое направление и изменить подпись выбранного.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -346,37 +550,9 @@ export function TrendsPage() {
               </Link>
               . Снимки появятся после первого успешного запуска дайджеста для выбранного направления.
             </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Имя</TableHead>
-                  <TableHead className="hidden sm:table-cell">Id профиля</TableHead>
-                  <TableHead className="text-right">Снимков</TableHead>
-                  <TableHead className="hidden md:table-cell">Последний период</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {profiles.map((p) => {
-                  const active = p.profile_id === selectedId
-                  return (
-                    <TableRow
-                      key={p.profile_id}
-                      className={cn('cursor-pointer', active && 'bg-muted/50')}
-                      onClick={() => setSelectedId(p.profile_id)}
-                    >
-                      <TableCell className="min-w-0 font-medium">{profileDisplayName(p)}</TableCell>
-                      <TableCell className="hidden min-w-0 break-all font-mono text-xs text-muted-foreground sm:table-cell">
-                        {p.profile_id}
-                      </TableCell>
-                      <TableCell className="text-right">{p.snapshot_count}</TableCell>
-                      <TableCell className="hidden md:table-cell">{p.last_period ?? '—'}</TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          )}
+          ) : !selectedId ? (
+            <p className="text-sm text-muted-foreground">Выберите направление в обзоре выше.</p>
+          ) : null}
           <Button type="button" variant="outline" size="sm" onClick={() => void loadProfiles()} disabled={loadingList}>
             Обновить список
           </Button>
@@ -392,7 +568,9 @@ export function TrendsPage() {
                       : selectedId}
                   </span>
                 </h3>
-                <p className="mt-1 font-mono text-xs text-muted-foreground break-all">{selectedId}</p>
+                {selectedProfile && profileHasDisplayName(selectedProfile) ? (
+                  <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{selectedId}</p>
+                ) : null}
               </div>
 
               <div className="space-y-2">
@@ -481,140 +659,6 @@ export function TrendsPage() {
           ) : null}
         </CardContent>
       </Card>
-
-      {selectedId ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex flex-wrap items-center gap-2">
-              Динамика
-              {selectedProfile ? (
-                <Badge variant="secondary" className="font-mono font-normal">
-                  {selectedProfile.profile_id}
-                </Badge>
-              ) : (
-                <Badge variant="secondary" className="font-mono font-normal">
-                  {selectedId}
-                </Badge>
-              )}
-            </CardTitle>
-            <CardDescription>
-              Изменение размера топа работ по сравнению с прошлым сохранённым периодом (месяц). Ниже можно наложить два
-              направления на один график.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {loadingSeries ? (
-              <p className="text-sm text-muted-foreground">Загрузка ряда…</p>
-            ) : points.length === 0 ? (
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">Нет точек для этого профиля.</p>
-                <Button type="button" variant="outline" size="sm" className="print:hidden" asChild>
-                  <Link to={digestSnapshotHref(selectedId)}>Запустить первый снимок</Link>
-                </Button>
-              </div>
-            ) : (
-              <>
-                {profiles.length > 1 ? (
-                  <div className="grid max-w-md gap-2 print:hidden">
-                    <Label htmlFor="trend-compare">Сравнить с профилем</Label>
-                    <Select value={compareId} onValueChange={setCompareId}>
-                      <SelectTrigger id="trend-compare" className="w-full sm:w-[min(100%,380px)]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={COMPARE_NONE}>Не сравнивать</SelectItem>
-                        {profiles
-                          .filter((p) => p.profile_id !== selectedId)
-                          .map((p) => (
-                            <SelectItem key={p.profile_id} value={p.profile_id}>
-                              {profileDisplayName(p)}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                    {compareId !== COMPARE_NONE && compareId !== selectedId && loadingCompare ? (
-                      <p className="text-xs text-muted-foreground">Загрузка ряда для сравнения…</p>
-                    ) : null}
-                    {compareId !== COMPARE_NONE &&
-                    compareId !== selectedId &&
-                    !loadingCompare &&
-                    comparePoints.length === 0 ? (
-                      <p className="text-xs text-amber-800 dark:text-amber-100/90">
-                        Для выбранного профиля нет точек — показан только график текущего.
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                <div className="space-y-4 print:hidden">
-                  <TrendKpiCards points={points} />
-                  {showCompare ? (
-                    <TrendCompareChart
-                      seriesA={points}
-                      seriesB={comparePoints}
-                      labelA={selectedProfile ? profileDisplayName(selectedProfile) : selectedId ?? ''}
-                      labelB={compareProfile ? profileDisplayName(compareProfile) : compareId}
-                    />
-                  ) : (
-                    <TrendSeriesChart points={points} maxWork={maxWork} />
-                  )}
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <TrendDeltaBarChart points={points} />
-                    <TrendAreaChart points={points} />
-                  </div>
-                </div>
-
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Период</TableHead>
-                      <TableHead className="text-right">Работ в топе</TableHead>
-                      <TableHead className="hidden text-right sm:table-cell">Δ к прошлому</TableHead>
-                      <TableHead className="hidden text-right md:table-cell">Δ %</TableHead>
-                      <TableHead className="text-right print:hidden">Снимок</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {points.map((p) => (
-                      <TableRow key={p.period}>
-                        <TableCell className="font-mono text-sm">{p.period}</TableCell>
-                        <TableCell className="text-right tabular-nums">{p.work_count}</TableCell>
-                        <TableCell
-                          className={cn(
-                            'hidden text-right sm:table-cell',
-                            deltaSignedClass(p.delta_vs_prev ?? null),
-                          )}
-                        >
-                          {p.delta_vs_prev == null ? '—' : p.delta_vs_prev > 0 ? `+${p.delta_vs_prev}` : String(p.delta_vs_prev)}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            'hidden text-right md:table-cell',
-                            deltaSignedClass(p.pct_change_vs_prev ?? null),
-                          )}
-                        >
-                          {p.pct_change_vs_prev == null ? '—' : `${p.pct_change_vs_prev > 0 ? '+' : ''}${p.pct_change_vs_prev}%`}
-                        </TableCell>
-                        <TableCell className="text-right print:hidden">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-8"
-                            onClick={() => void openSnapshotPeriod(p.period)}
-                          >
-                            Открыть
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
 
       <TrendSnapshotSheet
         open={snapshotOpen}

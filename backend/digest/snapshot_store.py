@@ -87,6 +87,14 @@ CREATE TABLE IF NOT EXISTS digest_schedule_runs (
     message TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_digest_schedule_runs_sched_fin ON digest_schedule_runs(schedule_id, finished_at DESC);
+CREATE TABLE IF NOT EXISTS trend_analysis_cache (
+    user_id TEXT NOT NULL,
+    profile_id TEXT NOT NULL,
+    analyzed_through_period TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, profile_id)
+);
 """
 
 CREATE_SQL_POSTGRES_DIGEST = """
@@ -178,6 +186,17 @@ CREATE TABLE IF NOT EXISTS digest_schedule_runs (
 
 CREATE_SQL_POSTGRES_SCHEDULE_RUNS_INDEX = """
 CREATE INDEX IF NOT EXISTS idx_digest_schedule_runs_sched_fin ON digest_schedule_runs(schedule_id, finished_at DESC);
+"""
+
+CREATE_SQL_POSTGRES_TREND_ANALYSIS_CACHE = """
+CREATE TABLE IF NOT EXISTS trend_analysis_cache (
+    user_id TEXT NOT NULL,
+    profile_id TEXT NOT NULL,
+    analyzed_through_period TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, profile_id)
+);
 """
 
 Backend = Literal["sqlite", "postgres"]
@@ -632,6 +651,26 @@ def _ensure_sqlite_auth_users(conn: sqlite3.Connection) -> None:
     )
 
 
+def _ensure_trend_analysis_cache_table(conn: sqlite3.Connection | PgConnection) -> None:
+    backend = _backend_of_conn(conn)
+    if backend == "sqlite":
+        if not _sqlite_table_exists(conn, "trend_analysis_cache"):
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS trend_analysis_cache (
+                    user_id TEXT NOT NULL,
+                    profile_id TEXT NOT NULL,
+                    analyzed_through_period TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, profile_id)
+                )
+                """
+            )
+    else:
+        conn.execute(CREATE_SQL_POSTGRES_TREND_ANALYSIS_CACHE)
+
+
 def _ensure_sqlite_auth_refresh_sessions(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -664,7 +703,9 @@ def init_snapshot_schema(conn: sqlite3.Connection | PgConnection) -> None:
         conn.execute(CREATE_SQL_POSTGRES_SAVED_DIGESTS)
         conn.execute(CREATE_SQL_POSTGRES_SCHEDULE_RUNS_TABLE)
         conn.execute(CREATE_SQL_POSTGRES_SCHEDULE_RUNS_INDEX)
+        conn.execute(CREATE_SQL_POSTGRES_TREND_ANALYSIS_CACHE)
     ensure_multiuser_schema(conn)
+    _ensure_trend_analysis_cache_table(conn)
     _ensure_saved_digest_share_columns(conn)
     migrate_digest_profiles_uuid_v1(conn)
 
@@ -954,10 +995,106 @@ def delete_digest_profile(
         (user_id, profile_id),
     )
     conn.execute(
+        f"DELETE FROM trend_analysis_cache WHERE user_id = {ph} AND profile_id = {ph}",
+        (user_id, profile_id),
+    )
+    conn.execute(
         f"DELETE FROM digest_profiles WHERE user_id = {ph} AND profile_id = {ph}",
         (user_id, profile_id),
     )
     return True
+
+
+def fetch_profile_display_name(
+    conn: sqlite3.Connection | PgConnection,
+    user_id: str,
+    profile_id: str,
+) -> str | None:
+    backend = _backend_of_conn(conn)
+    ph = _ph(backend)
+    row = conn.execute(
+        f"SELECT display_name FROM digest_profiles WHERE user_id = {ph} AND profile_id = {ph}",
+        (user_id, profile_id),
+    ).fetchone()
+    if not row:
+        return None
+    return str(row[0]).strip() or None
+
+
+def get_trend_analysis_cache(
+    conn: sqlite3.Connection | PgConnection,
+    user_id: str,
+    profile_id: str,
+) -> tuple[str, dict[str, Any]] | None:
+    backend = _backend_of_conn(conn)
+    ph = _ph(backend)
+    row = conn.execute(
+        f"""
+        SELECT analyzed_through_period, payload_json FROM trend_analysis_cache
+        WHERE user_id = {ph} AND profile_id = {ph}
+        """,
+        (user_id, profile_id),
+    ).fetchone()
+    if not row:
+        return None
+    period, raw = str(row[0]), row[1]
+    try:
+        payload = json.loads(raw) if isinstance(raw, str) else raw
+    except json.JSONDecodeError:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    return period, payload
+
+
+def upsert_trend_analysis_cache(
+    conn: sqlite3.Connection | PgConnection,
+    user_id: str,
+    profile_id: str,
+    analyzed_through_period: str,
+    payload: dict[str, Any],
+) -> None:
+    backend = _backend_of_conn(conn)
+    ph = _ph(backend)
+    now = datetime.now(timezone.utc).isoformat()
+    raw = json.dumps(payload, ensure_ascii=False)
+    if backend == "sqlite":
+        conn.execute(
+            f"""
+            INSERT INTO trend_analysis_cache (user_id, profile_id, analyzed_through_period, payload_json, created_at)
+            VALUES ({ph}, {ph}, {ph}, {ph}, {ph})
+            ON CONFLICT(user_id, profile_id) DO UPDATE SET
+                analyzed_through_period = excluded.analyzed_through_period,
+                payload_json = excluded.payload_json,
+                created_at = excluded.created_at
+            """,
+            (user_id, profile_id, analyzed_through_period, raw, now),
+        )
+    else:
+        conn.execute(
+            f"""
+            INSERT INTO trend_analysis_cache (user_id, profile_id, analyzed_through_period, payload_json, created_at)
+            VALUES ({ph}, {ph}, {ph}, {ph}, {ph})
+            ON CONFLICT (user_id, profile_id) DO UPDATE SET
+                analyzed_through_period = EXCLUDED.analyzed_through_period,
+                payload_json = EXCLUDED.payload_json,
+                created_at = EXCLUDED.created_at
+            """,
+            (user_id, profile_id, analyzed_through_period, raw, now),
+        )
+
+
+def delete_trend_analysis_cache(
+    conn: sqlite3.Connection | PgConnection,
+    user_id: str,
+    profile_id: str,
+) -> None:
+    backend = _backend_of_conn(conn)
+    ph = _ph(backend)
+    conn.execute(
+        f"DELETE FROM trend_analysis_cache WHERE user_id = {ph} AND profile_id = {ph}",
+        (user_id, profile_id),
+    )
 
 
 def list_period_metrics_for_profile(

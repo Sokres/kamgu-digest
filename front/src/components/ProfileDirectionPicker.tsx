@@ -6,6 +6,10 @@ export function profileDisplayName(p: TrendProfileSummary): string {
   return d || p.profile_id
 }
 
+export function profileHasDisplayName(p: TrendProfileSummary): boolean {
+  return (p.display_name ?? '').trim().length > 0
+}
+
 type ProfileDirectionPickerProps = {
   profiles: TrendProfileSummary[]
   selectedId: string
@@ -51,7 +55,9 @@ export function ProfileDirectionPicker({
               onClick={() => onSelect(p.profile_id)}
             >
               <div className="font-medium break-words text-pretty">{profileDisplayName(p)}</div>
-              <div className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{p.profile_id}</div>
+              {profileHasDisplayName(p) ? (
+                <div className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{p.profile_id}</div>
+              ) : null}
               {(p.snapshot_count ?? 0) > 0 || p.last_period ? (
                 <p className="mt-1.5 text-xs text-muted-foreground">
                   {p.snapshot_count != null ? `Снимков: ${p.snapshot_count}` : null}
