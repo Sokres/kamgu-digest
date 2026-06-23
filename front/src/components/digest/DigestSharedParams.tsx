@@ -29,8 +29,7 @@ export function DigestSharedParams({ form, idPrefix = 'shared' }: DigestSharedPa
       <CardHeader className="space-y-1">
         <CardTitle className="text-xl">Общие параметры поиска</CardTitle>
         <CardDescription className="text-pretty">
-          Темы, режим источников и лимиты используются для разового дайджеста, снимка с трендами и нового
-          расписания.
+          Темы, режим источников и лимиты — для разового обзора, сохранения для трендов и расписания.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -88,10 +87,22 @@ export function DigestSharedParams({ form, idPrefix = 'shared' }: DigestSharedPa
           </>
         ) : null}
 
+        {form.digestMode === 'peer_reviewed' ? (
+          <Alert className="border-primary/25 bg-primary/5">
+            <AlertTitle>Как лучше искать в OpenAlex</AlertTitle>
+            <AlertDescription className="text-pretty">
+              Пишите короткие фразы по сути темы — 2–5 ключевых слов, без длинных описаний вроде
+              «способы синтеза…» или «исследование влияния…». Каталог OpenAlex лучше понимает
+              английский: добавьте вторую строку с тем же смыслом на EN (например,{' '}
+              <span className="font-mono text-xs">silicon carbide synthesis</span>).
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
         <div className="space-y-2">
           <Label>Поисковые строки (RU/EN)</Label>
           <p className="text-xs text-muted-foreground">
-            Короткие фразы по сути темы; дублирование на двух языках улучшает отбор в OpenAlex.
+            Одна строка — одна тема. Можно указать и русский, и английский вариант.
           </p>
           {form.topics.map((t, i) => (
             <div key={i} className="flex gap-2">
@@ -157,7 +168,7 @@ export function DigestSharedParams({ form, idPrefix = 'shared' }: DigestSharedPa
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="space-y-2">
-            <Label htmlFor={`${idPrefix}-max-c`}>Макс. кандидатов (10–200)</Label>
+            <Label htmlFor={`${idPrefix}-max-c`}>Макс. найденных статей (10–200)</Label>
             <Input
               id={`${idPrefix}-max-c`}
               type="number"
@@ -168,7 +179,7 @@ export function DigestSharedParams({ form, idPrefix = 'shared' }: DigestSharedPa
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor={`${idPrefix}-top-n`}>Статей для модели (3–40)</Label>
+            <Label htmlFor={`${idPrefix}-top-n`}>Статей в итоговом обзоре (3–40)</Label>
             <Input
               id={`${idPrefix}-top-n`}
               type="number"
@@ -179,7 +190,7 @@ export function DigestSharedParams({ form, idPrefix = 'shared' }: DigestSharedPa
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor={`${idPrefix}-trend-k`}>Размер топа для трендов (5–60)</Label>
+            <Label htmlFor={`${idPrefix}-trend-k`}>Размер списка лидеров для трендов (5–60)</Label>
             <Input
               id={`${idPrefix}-trend-k`}
               type="number"

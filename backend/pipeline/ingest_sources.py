@@ -26,7 +26,6 @@ def search_query(topic_queries: list[str]) -> str:
 
 
 def english_search_fallback(topic_queries: list[str]) -> str | None:
-    """Если смешанный RU+EN запрос дал 0 работ в OpenAlex — пробуем отдельную EN-строку."""
     for q in topic_queries:
         q = unicodedata.normalize("NFC", (q or "").strip())
         if len(q) < 3:

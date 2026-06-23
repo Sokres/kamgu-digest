@@ -92,9 +92,9 @@ export function DigestSnapshotPanel({
   return (
     <Card className="border-border/70 shadow-sm">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-lg">Снимок и сравнение с прошлым периодом</CardTitle>
+        <CardTitle className="text-lg">Сохранение для трендов</CardTitle>
         <CardDescription className="text-pretty">
-          Сохраняет снимок в базе для графиков на странице{' '}
+          Фиксирует результаты за месяц и сравнивает с прошлым периодом. Графики — на странице{' '}
           <Link to="/trends" className="text-primary underline-offset-2 hover:underline">
             Тренды
           </Link>
@@ -207,7 +207,7 @@ export function DigestSnapshotPanel({
           ) : null}
 
           <Button type="submit" disabled={loading} size="lg" className="min-w-[240px]">
-            {loading ? 'Формирование…' : 'Запустить снимок'}
+            {loading ? 'Формирование…' : 'Сохранить и сравнить'}
           </Button>
         </form>
       </CardContent>

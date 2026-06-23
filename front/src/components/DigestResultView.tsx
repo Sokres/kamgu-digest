@@ -45,16 +45,16 @@ function MetaBlock({ meta }: { meta?: DigestMeta }) {
   ]
 
   if (mode === 'web_snippets') {
-    items.push({ label: 'Сниппетов в LLM', value: meta.web_snippets_used ?? '—' })
+    items.push({ label: 'Фрагментов в обзоре', value: meta.web_snippets_used ?? '—' })
     items.push({
       label: 'Фильтр научных доменов',
       value: meta.web_scholarly_domain_filter ? 'да (Tavily include_domains)' : 'нет (весь интернет)',
     })
   } else {
     items.push(
-      { label: 'OpenAlex', value: meta.candidates_openalex ?? '—' },
-      { label: 'Semantic Scholar', value: meta.candidates_semantic_scholar ?? '—' },
-      { label: 'CORE', value: meta.candidates_core ?? '—' },
+      { label: 'Найдено в OpenAlex', value: meta.candidates_openalex ?? '—' },
+      { label: 'Найдено в Semantic Scholar', value: meta.candidates_semantic_scholar ?? '—' },
+      { label: 'Найдено в CORE', value: meta.candidates_core ?? '—' },
       {
         label: 'Crossref (DOI)',
         value: meta.crossref_enriched_dois ?? '—',
@@ -71,12 +71,12 @@ function MetaBlock({ meta }: { meta?: DigestMeta }) {
         label: 'Двухэтапный LLM',
         value: meta.two_stage_llm === true ? 'да' : meta.two_stage_llm === false ? 'нет' : '—',
       },
-      { label: 'После дедупа', value: meta.after_dedupe ?? '—' },
+      { label: 'После объединения', value: meta.after_dedupe ?? '—' },
     )
   }
 
   items.push(
-    { label: 'В LLM', value: meta.used_for_llm ?? '—' },
+    { label: 'В итоговый обзор', value: meta.used_for_llm ?? '—' },
     {
       label: 'Секунд',
       value:

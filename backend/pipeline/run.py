@@ -99,10 +99,9 @@ async def run_digest(req: DigestRequest, document_user_id: str | None = None) ->
             else ""
         )
         raise ValueError(
-            "Не найдено публикаций: пустой OpenAlex на этом запросе, Semantic Scholar 403/429/пусто, "
-            "или фильтр по годам/типу (type:article) и концептам. Для 403 у SS задайте OPENALEX_MAILTO или "
-            "HTTP_USER_AGENT и/или SEMANTIC_SCHOLAR_API_KEY. Либо SEMANTIC_SCHOLAR_ENABLED=false и больший max_candidates, "
-            "либо peer_reviewed_only=false."
+            "Не найдено публикаций по вашим темам. Используйте короткие ключевые слова (2–5 слов), "
+            "добавьте отдельную строку на английском — OpenAlex лучше находит статьи по EN-формулировкам. "
+            "Также проверьте фильтр по годам и увеличьте «Макс. найденных статей», если нужно."
             + extra_pdf
         )
 

@@ -347,7 +347,7 @@ export function TrendsPage() {
           {
             title: 'Настройки направления',
             detail:
-              'Имя и заметка — в карточке профиля ниже. Темы поиска, новый снимок и расписание — на странице дайджеста.',
+              'Имя и заметка — в карточке профиля ниже. Темы и сохранение для трендов — на странице дайджеста.',
           },
         ]}
       />
@@ -395,7 +395,7 @@ export function TrendsPage() {
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground">Нет точек для этого профиля.</p>
                 <Button type="button" variant="outline" size="sm" className="print:hidden" asChild>
-                  <Link to={digestSnapshotHref(selectedId)}>Запустить первый снимок</Link>
+                  <Link to={digestSnapshotHref(selectedId)}>Запустить первое сохранение</Link>
                 </Button>
               </div>
             ) : (
@@ -467,7 +467,7 @@ export function TrendsPage() {
                       <TableHead className="text-right">Работ в топе</TableHead>
                       <TableHead className="hidden text-right sm:table-cell">Δ к прошлому</TableHead>
                       <TableHead className="hidden text-right md:table-cell">Δ %</TableHead>
-                      <TableHead className="text-right print:hidden">Снимок</TableHead>
+                      <TableHead className="text-right print:hidden">Подробнее</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -546,7 +546,7 @@ export function TrendsPage() {
             <p className="text-sm text-muted-foreground">
               Пока нет направлений — создайте одно полем выше или на странице{' '}
               <Link className="font-medium text-primary underline-offset-4 hover:underline" to="/?tab=snapshot">
-                дайджеста (вкладка «Снимок»)
+                дайджеста (вкладка «Тренды и расписание»)
               </Link>
               . Снимки появятся после первого успешного запуска дайджеста для выбранного направления.
             </p>
@@ -593,7 +593,7 @@ export function TrendsPage() {
                   запуски; графики ниже не пересчитываются задним числом.
                 </p>
                 <Button type="button" variant="secondary" size="sm" asChild>
-                  <Link to={digestSnapshotHref(selectedId)}>Изменить темы, снимок и расписание</Link>
+                  <Link to={digestSnapshotHref(selectedId)}>Изменить темы и запуск</Link>
                 </Button>
               </div>
 

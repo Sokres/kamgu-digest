@@ -9,8 +9,8 @@ import httpx
 
 from digest.config import settings
 from digest.models import DigestMeta, DigestRequest, DigestResponse, PublicationInput
-from pipeline.llm import generate_web_digest_llm
 from pipeline.ingest_sources import search_query as _search_query
+from pipeline.llm import generate_web_digest_llm
 from sources.tavily import (
     build_tavily_query,
     fetch_tavily_snippets,
@@ -30,7 +30,7 @@ async def ingest_web_publications(
     """
     if not (settings.tavily_api_key or "").strip():
         raise ValueError(
-            "Веб-обзор: укажите TAVILY_API_KEY в .env (https://tavily.com)."
+            "Веб-обзор: укажите TAVILY_API_KEY в настройках сервера (https://tavily.com)."
         )
     base_search = _search_query(req.topic_queries)
     tavily_query = build_tavily_query(base_search, req.web_search_additional_terms)
@@ -55,9 +55,9 @@ async def ingest_web_publications(
 
     if not snippets_raw:
         raise ValueError(
-            "Веб-обзор: пустой ответ поиска (запрос, ключ Tavily, лимиты). "
-            "Если включён поиск только по научным доменам — попробуйте добавить ключевые слова, "
-            "ослабить запрос или временно выключить ограничение научными сайтами."
+            "Поиск не нашёл подходящих материалов по этой формулировке. "
+            "Попробуйте короткие ключевые слова (2–5 слов), добавьте строку на английском "
+            "или временно отключите ограничение «только научные сайты»."
         )
 
     pubs = [
