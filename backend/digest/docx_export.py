@@ -45,6 +45,25 @@ def saved_digest_to_docx_bytes(
     for block in (response.digest_en or "—").split("\n"):
         doc.add_paragraph(block.strip() or " ")
 
+    if response.article_cards:
+        doc.add_heading("Карточки статей", level=1)
+        for i, card in enumerate(response.article_cards, 1):
+            head = f"{i}. {card.title}"
+            if card.year is not None:
+                head += f" ({card.year})"
+            para = doc.add_paragraph()
+            run = para.add_run(head)
+            run.bold = True
+            if card.url:
+                doc.add_paragraph(card.url)
+            summary = (card.summary_ru or card.summary_en or "").strip()
+            if summary:
+                doc.add_paragraph(summary)
+            if card.why_relevant:
+                doc.add_paragraph(f"Релевантность: {card.why_relevant}")
+            for bullet in card.bullets:
+                doc.add_paragraph(bullet, style="List Bullet")
+
     doc.add_heading("Публикации", level=1)
     for i, p in enumerate(response.publications_used, 1):
         head = f"{i}. {p.title}"

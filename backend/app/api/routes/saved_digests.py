@@ -251,7 +251,7 @@ async def create_or_get_share_link(
 async def remove_share_link(
     digest_id: str,
     auth_user: TokenUser | None = Depends(require_user_when_auth_enabled),
-) -> None:
+) -> Response:
     uid = _resolve_saved_digest_user_id(auth_user)
     try:
         with snapshot_connection(settings.snapshot_database_url) as conn:
@@ -263,13 +263,14 @@ async def remove_share_link(
 
     if not ok:
         raise HTTPException(status_code=404, detail="Сохранённый дайджест не найден.")
+    return Response(status_code=204)
 
 
 @router.delete("/saved-digests/{digest_id}", status_code=204)
 async def remove_saved_digest(
     digest_id: str,
     auth_user: TokenUser | None = Depends(require_user_when_auth_enabled),
-) -> None:
+) -> Response:
     uid = _resolve_saved_digest_user_id(auth_user)
     try:
         with snapshot_connection(settings.snapshot_database_url) as conn:
@@ -281,3 +282,4 @@ async def remove_saved_digest(
 
     if not ok:
         raise HTTPException(status_code=404, detail="Сохранённый дайджест не найден.")
+    return Response(status_code=204)

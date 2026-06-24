@@ -235,7 +235,9 @@ function ArticleCardsList({ cards }: { cards: ArticleCard[] }) {
   if (!cards.length) return <p className="text-sm text-muted-foreground">Нет карточек.</p>
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      {cards.map((c, i) => (
+      {cards.map((c, i) => {
+        const summary = (c.summary_ru || c.summary_en || '').trim()
+        return (
         <Card key={`${c.title}-${i}`}>
           <CardHeader className="pb-2">
             <CardTitle className="font-heading text-base font-semibold leading-snug tracking-tight">
@@ -259,6 +261,9 @@ function ArticleCardsList({ cards }: { cards: ArticleCard[] }) {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
+            {summary ? (
+              <p className="text-pretty leading-relaxed text-foreground/90">{summary}</p>
+            ) : null}
             {c.why_relevant ? (
               <p>
                 <span className="font-medium">Релевантность:</span> {c.why_relevant}
@@ -273,7 +278,8 @@ function ArticleCardsList({ cards }: { cards: ArticleCard[] }) {
             ) : null}
           </CardContent>
         </Card>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -308,7 +314,9 @@ function PublicationsTable({ rows }: { rows: PublicationInput[] }) {
                   p.title
                 )}
                 {p.abstract ? (
-                  <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{p.abstract}</p>
+                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed" title={p.abstract}>
+                    {p.abstract}
+                  </p>
                 ) : null}
               </TableCell>
               <TableCell className="whitespace-nowrap tabular-nums">{p.year ?? '—'}</TableCell>

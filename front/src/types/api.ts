@@ -49,6 +49,8 @@ export interface ArticleCard {
   title: string
   url?: string
   year?: number | null
+  summary_ru?: string
+  summary_en?: string
   bullets?: string[]
   why_relevant?: string
 }

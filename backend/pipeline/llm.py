@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from digest.config import settings
 from digest.llm_override import resolve_effective_llm_runtime
-from digest.models import DigestLLMResult, MonthlyStructuredDelta, PublicationInput
+from digest.models import ArticleCard, DigestLLMResult, MonthlyStructuredDelta, PublicationInput
 
 logger = logging.getLogger(__name__)
 
@@ -19,20 +19,23 @@ SYSTEM = """You are a research assistant producing digests for a lab.
 Rules:
 - Use ONLY the provided publication fields (title, year, url, doi, abstract; optional is_open_access, oa_url). The field abstract_text_kind tells you what "abstract" contains: metadata_abstract (journal abstract), pdf_excerpt (first pages from a user PDF), or oa_fulltext_excerpt (longer excerpt from an open-access PDF). For excerpts, focus on visible content only; do not infer unseen parts of the paper.
 - Do not invent methods, results, numbers, or citations not supported by the provided text.
-- If abstract is empty, base bullets only on the title and state uncertainty briefly.
+- When abstract is present, summary_ru and summary_en must paraphrase it (goal, approach if visible, main findings or limitations). Do not merely repeat the title.
+- When abstract is empty, write 2-4 conservative sentences from the title and note limited data.
 - Respond with a single JSON object, no markdown fences.
 JSON shape:
 {
-  "overview_ru": "2-4 sentences",
-  "overview_en": "2-4 sentences",
-  "digest_ru": "Markdown: sections Overview, Theme clusters (if clear), Highlights per paper",
+  "overview_ru": "4-6 sentences synthesizing the corpus",
+  "overview_en": "4-6 sentences in English",
+  "digest_ru": "Markdown: sections Overview, Theme clusters (if clear), Highlights per paper — for each paper a short paragraph plus bullet list",
   "digest_en": "Same structure in English",
   "article_cards": [
     {
       "title": "must match an input title exactly",
       "url": "from input or empty",
       "year": null,
-      "bullets": ["2-3 short points"],
+      "summary_ru": "4-7 sentences grounded in abstract; if abstract empty, 2-4 sentences from title with uncertainty note",
+      "summary_en": "same in English",
+      "bullets": ["3-5 short points grounded in the text"],
       "why_relevant": "one sentence tied to the user's topics"
     }
   ]
@@ -43,15 +46,16 @@ SYSTEM_MAP_PAPER = """You analyze ONE publication record for a research lab dige
 The "abstract" field may be a journal abstract (metadata_abstract), text from the first pages of a PDF (pdf_excerpt), or a longer excerpt from an open-access PDF (oa_fulltext_excerpt) — see abstract_text_kind.
 Rules:
 - Use ONLY the provided publication fields. Do not invent statistics, methods, or results not supported by the text.
+- When abstract/snippet is present, summary must cover goal, approach (if visible), main point, and limitations.
 - If the text is short or empty, say so briefly and stay conservative.
 - Respond with a single JSON object, no markdown fences.
 JSON shape:
 {
   "title_match": "must equal the input title exactly",
-  "summary_ru": "3-6 sentences: goal, approach if visible, main point or limitation",
+  "summary_ru": "4-7 sentences: goal, approach if visible, main point or limitation",
   "summary_en": "same in English",
-  "bullets_ru": ["2-4 short points grounded in the text"],
-  "bullets_en": ["2-4 short points in English"],
+  "bullets_ru": ["3-5 short points grounded in the text"],
+  "bullets_en": ["3-5 short points in English"],
   "why_relevant": "one sentence tying the paper to the user topics"
 }"""
 
@@ -59,19 +63,22 @@ SYSTEM_REDUCE = """You synthesize a research digest from per-paper summaries onl
 Rules:
 - Use ONLY paper_summaries and topics. Do not invent statistics, DOIs, or claims not present in the summaries.
 - article_cards: "title" must match each paper_summaries[].title exactly, in the same order as given.
+- Copy summary_ru and summary_en from paper_summaries into each article_card (you may lightly edit for flow).
 - Respond with a single JSON object, no markdown fences.
 Same JSON shape as the standard digest:
 {
-  "overview_ru": "2-4 sentences",
-  "overview_en": "2-4 sentences",
-  "digest_ru": "Markdown: sections Overview, Theme clusters (if clear), Highlights per paper",
+  "overview_ru": "4-6 sentences",
+  "overview_en": "4-6 sentences",
+  "digest_ru": "Markdown: sections Overview, Theme clusters (if clear), Highlights per paper — paragraph plus bullets per paper",
   "digest_en": "Same structure in English",
   "article_cards": [
     {
       "title": "must match an input title exactly",
       "url": "from paper_summaries or empty",
       "year": null,
-      "bullets": ["2-3 short points from summaries"],
+      "summary_ru": "from paper_summaries, 4-7 sentences",
+      "summary_en": "from paper_summaries, 4-7 sentences",
+      "bullets": ["3-5 short points from summaries"],
       "why_relevant": "one sentence tied to the user's topics"
     }
   ]
@@ -82,21 +89,24 @@ SYSTEM_WEB = """You summarize WEB SEARCH SNIPPETS for a research lab (not peer-r
 Rules:
 - This is NOT a systematic review or a catalog of journal articles. Treat each item as a web page with a short excerpt.
 - Use ONLY facts and phrasing supported by the provided snippets. Do not invent statistics, paper titles, DOIs, or journal names not present in snippets.
+- summary_ru and summary_en must expand on the snippet content; if snippet is very short, state that limitation.
 - If information is missing or uncertain, say so briefly.
 - article_cards: "title" must match a snippet title exactly; "url" from that snippet.
 - Respond with a single JSON object, no markdown fences.
 Same JSON shape as the standard digest:
 {
-  "overview_ru": "2-4 sentences; mention web-snippet limitation",
-  "overview_en": "2-4 sentences",
-  "digest_ru": "Markdown: start with a short disclaimer that this is web search snippets, then themes and per-source highlights",
+  "overview_ru": "4-6 sentences; mention web-snippet limitation",
+  "overview_en": "4-6 sentences",
+  "digest_ru": "Markdown: start with a short disclaimer that this is web search snippets, then themes and per-source highlights with paragraph plus bullets per source",
   "digest_en": "Same in English",
   "article_cards": [
     {
       "title": "must match an input snippet title exactly",
       "url": "from snippet",
       "year": null,
-      "bullets": ["2-3 short points from snippet only"],
+      "summary_ru": "3-6 sentences from snippet only",
+      "summary_en": "same in English",
+      "bullets": ["3-5 short points from snippet only"],
       "why_relevant": "one sentence"
     }
   ]
@@ -112,17 +122,27 @@ Rules:
 - In digest_ru and digest_en, use Markdown with these sections in order:
   1) **Disclaimer** (one short paragraph): metrics come from snapshot comparisons of this corpus; citation data lag; "popularity" means citation change / rank within this sample, not definitive global impact.
   2) **Observed metric shifts** — only quantitative/tabular facts from structured_delta (top citation gains, entered/left top-K, concept share deltas). If a list is empty, say so briefly.
-  3) **Current highlights** — thematic clusters and paper summaries from abstracts.
+  3) **Current highlights** — thematic clusters and paper summaries from abstracts; paragraph plus bullets per paper.
   4) **Risks and discussion hypotheses** — clearly label as hypotheses and questions for expert discussion, NOT as facts or firm predictions about the field going "wrong".
-- If abstract is empty, base bullets only on the title and note uncertainty briefly.
+- When abstract is present, article_card summary must paraphrase it. When abstract is empty, 2-4 sentences from title with uncertainty note.
 - Respond with a single JSON object, no markdown fences.
 Same JSON shape as the standard digest:
 {
-  "overview_ru": "2-4 sentences",
-  "overview_en": "2-4 sentences",
+  "overview_ru": "4-6 sentences",
+  "overview_en": "4-6 sentences",
   "digest_ru": "Markdown sections as above",
   "digest_en": "Same structure in English",
-  "article_cards": [ ... one per input publication, same order ... ]
+  "article_cards": [
+    {
+      "title": "must match an input title exactly",
+      "url": "from input or empty",
+      "year": null,
+      "summary_ru": "4-7 sentences grounded in abstract",
+      "summary_en": "same in English",
+      "bullets": ["3-5 short points"],
+      "why_relevant": "one sentence tied to the user's topics"
+    }
+  ]
 }
 Include one article_card per input publication, in the same order as given."""
 
@@ -154,17 +174,27 @@ Rules:
 - In digest_ru and digest_en, use Markdown with these sections in order:
   1) **Disclaimer** (one short paragraph): metrics come from snapshot comparisons of this corpus; citation data lag; "popularity" means citation change / rank within this sample, not definitive global impact.
   2) **Observed metric shifts** — only quantitative/tabular facts from structured_delta (top citation gains, entered/left top-K, concept share deltas). If a list is empty, say so briefly.
-  3) **Current highlights** — thematic clusters and paper points from paper_summaries.
+  3) **Current highlights** — thematic clusters and paper points from paper_summaries; paragraph plus bullets per paper.
   4) **Risks and discussion hypotheses** — clearly label as hypotheses and questions for expert discussion, NOT as facts or firm predictions about the field going "wrong".
-- article_cards: one per paper_summaries entry, same order; "title" must match paper_summaries[].title exactly; bullets grounded in paper_summaries.
+- article_cards: one per paper_summaries entry, same order; "title" must match paper_summaries[].title exactly; copy summary_ru/summary_en from paper_summaries; bullets grounded in paper_summaries.
 - Respond with a single JSON object, no markdown fences.
 Same JSON shape as the standard digest:
 {
-  "overview_ru": "2-4 sentences",
-  "overview_en": "2-4 sentences",
+  "overview_ru": "4-6 sentences",
+  "overview_en": "4-6 sentences",
   "digest_ru": "Markdown sections as above",
   "digest_en": "Same structure in English",
-  "article_cards": [ ... one per paper_summaries item, same order ... ]
+  "article_cards": [
+    {
+      "title": "must match paper_summaries title exactly",
+      "url": "from paper_summaries or empty",
+      "year": null,
+      "summary_ru": "from paper_summaries, 4-7 sentences",
+      "summary_en": "from paper_summaries, 4-7 sentences",
+      "bullets": ["3-5 short points from summaries"],
+      "why_relevant": "one sentence tied to the user's topics"
+    }
+  ]
 }"""
 
 
@@ -313,6 +343,78 @@ async def _map_paper_summaries(
     return list(await asyncio.gather(*[one(p) for p in publications]))
 
 
+def _abstract_excerpt(text: str, max_chars: int = 600) -> str:
+    t = re.sub(r"\s+", " ", (text or "").strip())
+    if not t:
+        return ""
+    if len(t) <= max_chars:
+        return t
+    cut = t[:max_chars]
+    last_space = cut.rfind(" ")
+    if last_space > max_chars // 2:
+        cut = cut[:last_space]
+    return cut.rstrip() + "…"
+
+
+def _merge_map_summaries_into_cards(
+    result: DigestLLMResult,
+    paper_summaries: list[dict[str, Any]],
+) -> DigestLLMResult:
+    by_title = {str(s.get("title") or ""): s for s in paper_summaries if s.get("title")}
+    new_cards: list[ArticleCard] = []
+    for card in result.article_cards:
+        ps = by_title.get(card.title, {})
+        summary_ru = card.summary_ru.strip() or str(ps.get("summary_ru") or "").strip()
+        summary_en = card.summary_en.strip() or str(ps.get("summary_en") or "").strip()
+        bullets = list(card.bullets)
+        if not bullets:
+            bullets_ru = ps.get("bullets_ru")
+            if isinstance(bullets_ru, list) and bullets_ru:
+                bullets = [str(x) for x in bullets_ru[:8]]
+        why_relevant = card.why_relevant.strip() or str(ps.get("why_relevant") or "").strip()
+        new_cards.append(
+            card.model_copy(
+                update={
+                    "summary_ru": summary_ru,
+                    "summary_en": summary_en,
+                    "bullets": bullets,
+                    "why_relevant": why_relevant,
+                }
+            )
+        )
+    return result.model_copy(update={"article_cards": new_cards})
+
+
+def _ensure_card_summaries(
+    result: DigestLLMResult,
+    publications: list[PublicationInput],
+    *,
+    max_excerpt: int = 600,
+) -> DigestLLMResult:
+    by_title = {p.title: p for p in publications}
+    new_cards: list[ArticleCard] = []
+    for i, card in enumerate(result.article_cards):
+        pub = by_title.get(card.title) or (publications[i] if i < len(publications) else None)
+        summary_ru = card.summary_ru.strip()
+        summary_en = card.summary_en.strip()
+        if not summary_en and pub and (pub.abstract or "").strip():
+            summary_en = _abstract_excerpt(pub.abstract, max_excerpt)
+        new_cards.append(
+            card.model_copy(update={"summary_ru": summary_ru, "summary_en": summary_en})
+        )
+    return result.model_copy(update={"article_cards": new_cards})
+
+
+def _finalize_digest_result(
+    result: DigestLLMResult,
+    publications: list[PublicationInput],
+    paper_summaries: list[dict[str, Any]] | None = None,
+) -> DigestLLMResult:
+    if paper_summaries:
+        result = _merge_map_summaries_into_cards(result, paper_summaries)
+    return _ensure_card_summaries(result, publications)
+
+
 def _llm_result_from_raw(data: dict[str, Any]) -> DigestLLMResult:
     try:
         return DigestLLMResult.model_validate(data)
@@ -335,7 +437,8 @@ async def _generate_digest_llm_two_stage(
     paper_summaries = await _map_paper_summaries(publications, topic_queries)
     reduce_payload = {"topics": topic_queries, "paper_summaries": paper_summaries}
     data = await _chat_json_to_dict(SYSTEM_REDUCE, reduce_payload)
-    return _llm_result_from_raw(data)
+    result = _llm_result_from_raw(data)
+    return _finalize_digest_result(result, publications, paper_summaries)
 
 
 async def _generate_monthly_digest_llm_two_stage(
@@ -351,7 +454,8 @@ async def _generate_monthly_digest_llm_two_stage(
         "paper_summaries": paper_summaries,
     }
     data = await _chat_json_to_dict(SYSTEM_REDUCE_MONTHLY, reduce_payload)
-    return _llm_result_from_raw(data)
+    result = _llm_result_from_raw(data)
+    return _finalize_digest_result(result, publications, paper_summaries)
 
 
 def _make_openai_async_client() -> tuple[AsyncOpenAI, str]:
@@ -491,6 +595,7 @@ async def _chat_json_to_dict(system: str, user_payload: dict[str, Any]) -> dict[
 async def generate_web_digest_llm(
     snippets: list[dict[str, Any]],
     topic_queries: list[str],
+    publications: list[PublicationInput] | None = None,
 ) -> DigestLLMResult:
     user_payload = {
         "topics": topic_queries,
@@ -498,17 +603,20 @@ async def generate_web_digest_llm(
     }
     data = await _chat_json_to_dict(SYSTEM_WEB, user_payload)
     try:
-        return DigestLLMResult.model_validate(data)
+        result = DigestLLMResult.model_validate(data)
     except ValidationError as e:
         logger.warning("LLM web JSON shape drift, using partial fallback: %s", e)
         raw_fallback = json.dumps(data, ensure_ascii=False) if data else ""
-        return DigestLLMResult(
+        result = DigestLLMResult(
             overview_ru=str(data.get("overview_ru") or ""),
             overview_en=str(data.get("overview_en") or ""),
             digest_ru=str(data.get("digest_ru") or raw_fallback[:8000]),
             digest_en=str(data.get("digest_en") or ""),
             article_cards=[],
         )
+    if publications:
+        result = _finalize_digest_result(result, publications)
+    return result
 
 
 async def generate_digest_llm(
@@ -530,7 +638,8 @@ async def generate_digest_llm(
 
     user_payload = _digest_user_payload(publications, topic_queries)
     data = await _chat_json_to_dict(SYSTEM, user_payload)
-    return _llm_result_from_raw(data), False
+    result = _llm_result_from_raw(data)
+    return _finalize_digest_result(result, publications), False
 
 
 def _trend_series_user_payload(
@@ -601,4 +710,5 @@ async def generate_monthly_digest_llm(
 
     user_payload = _monthly_user_payload(publications, topic_queries, structured_delta)
     data = await _chat_json_to_dict(SYSTEM_MONTHLY, user_payload)
-    return _llm_result_from_raw(data), False
+    result = _llm_result_from_raw(data)
+    return _finalize_digest_result(result, publications), False

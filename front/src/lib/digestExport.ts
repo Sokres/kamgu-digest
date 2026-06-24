@@ -1,4 +1,4 @@
-import type { DigestResponse, MonthlyDigestResponse, PublicationInput } from '@/types/api'
+import type { ArticleCard, DigestResponse, MonthlyDigestResponse, PublicationInput } from '@/types/api'
 
 function escapeMd(s: string): string {
   return s.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n')
@@ -17,6 +17,29 @@ function publicationLine(p: PublicationInput, i: number): string {
 export function publicationsToMarkdown(rows: PublicationInput[]): string {
   if (!rows.length) return '_Публикаций нет._\n'
   return rows.map((p, i) => publicationLine(p, i)).join('\n\n') + '\n'
+}
+
+function articleCardsToMarkdown(cards: ArticleCard[]): string {
+  if (!cards.length) return '_Карточек нет._\n'
+  const blocks: string[] = []
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i]
+    const summary = (c.summary_ru || c.summary_en || '').trim()
+    const head = `### ${i + 1}. ${escapeMd(c.title)}`
+    blocks.push(head)
+    if (c.year != null) blocks.push(`**Год:** ${c.year}`)
+    if (c.url) blocks.push(`**Ссылка:** ${c.url}`)
+    if (summary) blocks.push(`\n${escapeMd(summary)}`)
+    if (c.why_relevant) blocks.push(`\n**Релевантность:** ${escapeMd(c.why_relevant)}`)
+    if (c.bullets?.length) {
+      blocks.push('')
+      for (const b of c.bullets) {
+        blocks.push(`- ${escapeMd(b)}`)
+      }
+    }
+    blocks.push('')
+  }
+  return blocks.join('\n')
 }
 
 function bibtexBraceEscape(s: string): string {
@@ -110,6 +133,8 @@ export function digestBodyToMarkdown(data: DigestResponse | MonthlyDigestRespons
   blocks.push(escapeMd(data.digest_ru || '—'))
   blocks.push('\n\n## Дайджест (EN)\n')
   blocks.push(escapeMd(data.digest_en || '—'))
+  blocks.push('\n\n## Карточки статей\n\n')
+  blocks.push(articleCardsToMarkdown(data.article_cards))
   blocks.push('\n\n## Использованные публикации\n\n')
   blocks.push(publicationsToMarkdown(data.publications_used))
   return blocks.join('')

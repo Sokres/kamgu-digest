@@ -121,7 +121,9 @@ class ArticleCard(BaseModel):
     title: str
     url: str = ""
     year: int | None = None
-    bullets: list[str] = Field(default_factory=list, description="2–3 тезиса по abstract")
+    summary_ru: str = Field(default="", description="Развёрнутое описание статьи на русском")
+    summary_en: str = Field(default="", description="Развёрнутое описание статьи на английском")
+    bullets: list[str] = Field(default_factory=list, description="3–5 тезисов по abstract")
     why_relevant: str = ""
 
 

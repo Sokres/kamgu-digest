@@ -96,6 +96,7 @@ async def run_web_digest(req: DigestRequest) -> DigestResponse:
             for p in pubs
         ],
         req.topic_queries,
+        publications=pubs,
     )
 
     digest_ru = llm.digest_ru.strip()
