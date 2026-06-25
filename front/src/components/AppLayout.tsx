@@ -24,7 +24,7 @@ const ROUTE_META: Record<string, { title: string; subtitle: string }> = {
   },
   '/trends': {
     title: 'Тренды',
-    subtitle: 'История снимков по направлениям и динамика размера топа по периодам',
+    subtitle: 'История периодов по направлениям и динамика размера топа',
   },
   '/saved': {
     title: 'Сохранённые',

@@ -26,13 +26,13 @@ export function TrendAnalysisPanel({
   const hasText = Boolean(analysis?.analysis_ru?.trim())
 
   return (
-    <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+    <Card className="border-primary/20 bg-linear-to-br from-primary/5 to-transparent">
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle>ИИ-анализ направления</CardTitle>
             <CardDescription className="text-pretty">
-              Сводная интерпретация динамики по всем сохранённым снимкам. Текст формирует LLM-агент на основе
+              Сводная интерпретация динамики по всем сохранённым периодам. Текст формирует LLM-агент на основе
               структурированных метрик.
             </CardDescription>
           </div>
@@ -64,7 +64,7 @@ export function TrendAnalysisPanel({
           </div>
         ) : !canAnalyze ? (
           <p className="text-sm text-muted-foreground text-pretty">
-            Накопите минимум 2 снимка, чтобы сравнить периоды и получить сравнительный анализ. Сейчас снимков:{' '}
+            Накопите минимум 2 периода, чтобы получить сравнительный анализ. Сейчас периодов:{' '}
             {snapshotCount}.
           </p>
         ) : !hasText ? (

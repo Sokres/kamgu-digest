@@ -41,7 +41,7 @@ export function TrendProfilesOverview({
                 <p className="font-medium text-sm leading-snug">{profileDisplayName(p)}</p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <Badge variant="secondary" className="text-[10px] font-normal">
-                    снимков: {p.snapshot_count}
+                    периодов: {p.snapshot_count}
                   </Badge>
                   {p.last_period ? (
                     <Badge variant="outline" className="text-[10px] font-normal font-mono">

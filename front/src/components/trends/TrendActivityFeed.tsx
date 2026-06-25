@@ -9,7 +9,7 @@ type TrendActivityFeedProps = {
 }
 
 function periodLabel(p: TrendPeriodHighlight): string {
-  if (p.is_baseline) return 'Базовая линия — первый снимок, сравнение недоступно.'
+  if (p.is_baseline) return 'Базовая линия — первый период, сравнение недоступно.'
   const parts: string[] = []
   if (p.entered_count) parts.push(`вошли в топ: ${p.entered_count}`)
   if (p.left_count) parts.push(`вышли из топа: ${p.left_count}`)

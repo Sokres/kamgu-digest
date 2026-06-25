@@ -574,22 +574,22 @@ export function TrendsPage() {
               </div>
 
               <div className="space-y-2">
-                <p className="text-sm font-medium">Темы последнего снимка</p>
+                <p className="text-sm font-medium">Темы последнего периода</p>
                 {selectedProfile?.topic_queries?.length ? (
                   <ul className="list-inside list-disc space-y-1 text-sm text-muted-foreground">
                     {selectedProfile.topic_queries.map((q) => (
-                      <li key={q} className="break-words">
+                      <li key={q} className="wrap-break-word">
                         {q}
                       </li>
                     ))}
                   </ul>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    Снимков ещё не было — темы задаются при первом запуске на странице дайджеста.
+                    Сохранённых периодов ещё не было — темы задаются при первом запуске на странице дайджеста.
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground text-pretty">
-                  Это темы из последнего сохранённого снимка. Новые темы в дайджесте влияют только на следующие
+                  Это темы из последнего сохранённого периода. Новые темы в дайджесте влияют только на следующие
                   запуски; графики ниже не пересчитываются задним числом.
                 </p>
                 <Button type="button" variant="secondary" size="sm" asChild>

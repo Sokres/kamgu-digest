@@ -177,7 +177,7 @@ export function fullReportMarkdown(
     lines.push('\n## Структурированное сравнение периодов\n')
     lines.push(`- Текущий период: ${d.current_period}`)
     if (d.compared_period) lines.push(`- Сравнение с: ${d.compared_period}`)
-    if (d.is_baseline) lines.push('- Базовая линия (первый снимок)')
+    if (d.is_baseline) lines.push('- Базовая линия (первый период)')
     lines.push('')
   }
   return lines.join('\n')

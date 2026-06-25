@@ -19,7 +19,7 @@ export function TrendLatestSnapshotPanel({ latest }: TrendLatestSnapshotPanelPro
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle>Последний снимок — {latest.period}</CardTitle>
+        <CardTitle>Последний период — {latest.period}</CardTitle>
         <CardDescription>
           Текст дайджеста и структурированные изменения к прошлому периоду без открытия боковой панели.
         </CardDescription>

@@ -54,13 +54,13 @@ export function ProfileDirectionPicker({
               )}
               onClick={() => onSelect(p.profile_id)}
             >
-              <div className="font-medium break-words text-pretty">{profileDisplayName(p)}</div>
+              <div className="font-medium wrap-break-word text-pretty">{profileDisplayName(p)}</div>
               {profileHasDisplayName(p) ? (
                 <div className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{p.profile_id}</div>
               ) : null}
               {(p.snapshot_count ?? 0) > 0 || p.last_period ? (
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  {p.snapshot_count != null ? `Снимков: ${p.snapshot_count}` : null}
+                  {p.snapshot_count != null ? `Периодов: ${p.snapshot_count}` : null}
                   {p.snapshot_count != null && p.last_period ? ' · ' : null}
                   {p.last_period ? `последний период ${p.last_period}` : null}
                 </p>
