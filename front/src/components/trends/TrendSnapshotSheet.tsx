@@ -51,10 +51,11 @@ export function TrendSnapshotSheet({
   error,
 }: TrendSnapshotSheetProps) {
   const monthly = detail ? detailToMonthlyResponse(detail) : null
+  const isBaseline = detail?.structured_delta?.is_baseline === true
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="flex w-full flex-col overflow-y-auto sm:max-w-2xl">
+      <SheetContent className="flex w-[96vw] flex-col overflow-y-auto sm:max-w-[min(1180px,96vw)]">
         <SheetHeader>
           <SheetTitle>Снимок {period ?? ''}</SheetTitle>
           <SheetDescription className="font-mono text-xs">
@@ -74,6 +75,15 @@ export function TrendSnapshotSheet({
               <AlertDescription className="text-pretty text-sm">
                 Текст дайджеста для этого периода не сохранён (старый снимок). Ниже — список работ в топе (
                 {detail.work_count}).
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {isBaseline ? (
+            <Alert>
+              <AlertDescription className="text-pretty text-sm">
+                Это базовый снимок. В нём есть дайджест и список работ, но нет сравнения с прошлым периодом, потому что
+                предыдущего периода ещё нет.
               </AlertDescription>
             </Alert>
           ) : null}

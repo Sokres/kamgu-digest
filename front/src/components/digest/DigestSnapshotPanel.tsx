@@ -88,6 +88,7 @@ export function DigestSnapshotPanel({
   }
 
   const selectedProfile = trendProfiles.find((p) => p.profile_id === form.selectedProfileId)
+  const snapshotCount = selectedProfile?.snapshot_count ?? 0
 
   return (
     <Card className="border-border/70 shadow-sm">
@@ -123,19 +124,35 @@ export function DigestSnapshotPanel({
               disabled={profilesLoading}
             />
             {form.selectedProfileId ? (
-              <p className="text-sm text-muted-foreground">
-                Выбрано:{' '}
-                <span className="font-medium text-foreground">
-                  {profileDisplayName(
-                    selectedProfile ?? {
-                      profile_id: form.selectedProfileId,
-                      snapshot_count: 0,
-                      topic_queries: [],
-                      work_count_last: 0,
-                    },
-                  )}
-                </span>
-              </p>
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Выбрано:{' '}
+                  <span className="font-medium text-foreground">
+                    {profileDisplayName(
+                      selectedProfile ?? {
+                        profile_id: form.selectedProfileId,
+                        snapshot_count: 0,
+                        topic_queries: [],
+                        work_count_last: 0,
+                      },
+                    )}
+                  </span>
+                  {selectedProfile ? (
+                    <span className="ml-2 text-xs">
+                      Периодов: {snapshotCount}
+                      {selectedProfile.last_period ? ` · последний ${selectedProfile.last_period}` : ''}
+                    </span>
+                  ) : null}
+                </p>
+                {selectedProfile && snapshotCount < 2 ? (
+                  <Alert className="border-amber-200/80 bg-amber-50/80 dark:border-amber-900/50 dark:bg-amber-950/30">
+                    <AlertDescription className="text-pretty text-sm text-amber-950/90 dark:text-amber-50/90">
+                      Для выводов в «Трендах» нужен минимум второй месячный период. Ежедневный автозапуск в течение
+                      одного месяца обновляет текущий снимок, но не создаёт новую точку сравнения.
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+              </div>
             ) : null}
             <div className="flex flex-wrap items-end gap-2">
               <div className="grid min-w-[200px] flex-1 gap-2">

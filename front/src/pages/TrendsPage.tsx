@@ -357,6 +357,8 @@ export function TrendsPage() {
     compareId !== selectedId &&
     comparePoints.length > 0 &&
     !loadingSeries
+  const latestPoint = points[points.length - 1]
+  const hasComparisons = points.length >= 2
 
   async function openSnapshotPeriod(period: string) {
     if (!selectedId) return
@@ -455,7 +457,7 @@ export function TrendsPage() {
         <Card className="border-border/75 bg-card/95">
           <CardHeader>
             <CardTitle className="flex flex-wrap items-center gap-2">
-              Динамика
+              {hasComparisons ? 'Динамика' : 'Первый снимок'}
               {selectedProfile && profileHasDisplayName(selectedProfile) ? (
                 <Badge variant="secondary" className="font-mono font-normal">
                   {selectedProfile.profile_id}
@@ -463,7 +465,9 @@ export function TrendsPage() {
               ) : null}
             </CardTitle>
             <CardDescription>
-              ИИ-анализ, метрики изменений, графики размера топа и сравнение двух направлений.
+              {hasComparisons
+                ? 'ИИ-анализ, метрики изменений, графики размера топа и сравнение двух направлений.'
+                : 'Первый период сохранён как базовая линия. Сравнение появится после следующего месячного периода.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -478,18 +482,31 @@ export function TrendsPage() {
               </div>
             ) : (
               <>
-                <TrendAnalysisPanel
-                  loading={loadingAnalysis && !analysis}
-                  error={analysisError}
-                  analysis={analysis}
-                  snapshotCount={points.length}
-                  onRefresh={() => void loadAnalysis(true)}
-                  refreshing={refreshingAnalysis}
+                {!hasComparisons && latestPoint ? (
+                  <div className="rounded-lg border border-amber-200/80 bg-amber-50/80 p-4 text-sm text-amber-950/90 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-50/90">
+                    Сейчас есть только снимок за <span className="font-mono font-medium">{latestPoint.period}</span>.
+                    Ежедневные запуски внутри этого же месяца обновляют этот период. Чтобы увидеть изменения, нужен
+                    следующий период, например следующий месяц, или ручной запуск с другим `YYYY-MM`.
+                  </div>
+                ) : null}
+
+                {hasComparisons ? (
+                  <TrendAnalysisPanel
+                    loading={loadingAnalysis && !analysis}
+                    error={analysisError}
+                    analysis={analysis}
+                    snapshotCount={points.length}
+                    onRefresh={() => void loadAnalysis(true)}
+                    refreshing={refreshingAnalysis}
+                  />
+                ) : null}
+
+                <TrendLatestSnapshotPanel
+                  latest={highlights?.latest_snapshot}
+                  onOpen={(period) => void openSnapshotPeriod(period)}
                 />
 
-                <TrendLatestSnapshotPanel latest={highlights?.latest_snapshot} />
-
-                {profiles.length > 1 ? (
+                {hasComparisons && profiles.length > 1 ? (
                   <div className="grid max-w-md gap-2 print:hidden">
                     <Label htmlFor="trend-compare">Сравнить с профилем</Label>
                     <Select value={compareId} onValueChange={setCompareId}>
@@ -521,6 +538,7 @@ export function TrendsPage() {
                   </div>
                 ) : null}
 
+                {hasComparisons ? (
                 <div className="space-y-4 print:hidden">
                   <TrendKpiCards points={points} highlights={highlights?.points} />
                   <TrendActivityFeed points={highlights?.points ?? []} />
@@ -537,6 +555,7 @@ export function TrendsPage() {
                   )}
                   <TrendDeltaBarChart points={points} />
                 </div>
+                ) : null}
 
                 <Table>
                   <TableHeader>
@@ -572,9 +591,9 @@ export function TrendsPage() {
                         <TableCell className="text-right print:hidden">
                           <Button
                             type="button"
-                            variant="ghost"
+                            variant="secondary"
                             size="sm"
-                            className="h-8"
+                            className="h-8 min-w-[92px]"
                             onClick={() => void openSnapshotPeriod(p.period)}
                           >
                             Открыть

@@ -1,28 +1,39 @@
 import { StructuredDeltaView } from '@/components/StructuredDeltaView'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { TrendLatestSnapshotSummary } from '@/types/api'
 
 type TrendLatestSnapshotPanelProps = {
   latest: TrendLatestSnapshotSummary | null | undefined
+  onOpen?: (period: string) => void
 }
 
-export function TrendLatestSnapshotPanel({ latest }: TrendLatestSnapshotPanelProps) {
+export function TrendLatestSnapshotPanel({ latest, onOpen }: TrendLatestSnapshotPanelProps) {
   if (!latest) return null
 
   const hasDigest = Boolean(latest.digest_available && latest.digest_ru?.trim())
-  const hasDelta = Boolean(latest.structured_delta && !latest.structured_delta.is_baseline)
-
-  if (!hasDigest && !hasDelta) return null
+  const isBaseline = latest.structured_delta?.is_baseline === true
 
   return (
-    <Card>
+    <Card className="border-border/75 bg-card/95">
       <CardHeader className="pb-3">
-        <CardTitle>Последний период — {latest.period}</CardTitle>
-        <CardDescription>
-          Текст дайджеста и структурированные изменения к прошлому периоду без открытия боковой панели.
-        </CardDescription>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>Последний снимок — {latest.period}</CardTitle>
+            <CardDescription>
+              {isBaseline
+                ? 'Это базовый снимок направления. Сравнение появится после следующего месячного периода.'
+                : 'Текст дайджеста и структурированные изменения к прошлому периоду.'}
+            </CardDescription>
+          </div>
+          {onOpen ? (
+            <Button type="button" variant="secondary" size="sm" onClick={() => onOpen(latest.period)}>
+              Открыть снимок
+            </Button>
+          ) : null}
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {hasDigest ? (
@@ -44,11 +55,18 @@ export function TrendLatestSnapshotPanel({ latest }: TrendLatestSnapshotPanelPro
           </Alert>
         )}
 
-        {latest.structured_delta ? (
+        {latest.structured_delta && !isBaseline ? (
           <div className="space-y-2">
             <h3 className="text-sm font-medium">Изменения к прошлому периоду</h3>
             <StructuredDeltaView delta={latest.structured_delta} />
           </div>
+        ) : isBaseline ? (
+          <Alert>
+            <AlertDescription className="text-pretty text-sm">
+              Пока есть только один период. Он не потерян и не “ничего не делает”: он становится базовой линией,
+              с которой будет сравниваться следующий месяц.
+            </AlertDescription>
+          </Alert>
         ) : null}
       </CardContent>
     </Card>

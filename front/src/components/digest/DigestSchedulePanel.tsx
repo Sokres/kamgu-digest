@@ -36,7 +36,7 @@ import {
   toScheduleCreateBody,
   toSchedulePatchBody,
 } from '@/lib/scheduleParams'
-import { formatUtcTime24, parseFixedHourMinute, scheduleLocalHint } from '@/lib/scheduleLabels'
+import { formatUtcTime24, inferScheduleFromCron, parseFixedHourMinute, scheduleLocalHint } from '@/lib/scheduleLabels'
 import {
   scheduleLastStatusIsFailure,
   scheduleLastStatusLabel,
@@ -135,6 +135,9 @@ export function DigestSchedulePanel({
   const primarySchedule = profileSchedules.find((s) => s.enabled) ?? profileSchedules[0] ?? null
   const latestRun = pickLatestRun(profileSchedules)
   const schedulerOff = digestSchedules && !digestSchedules.scheduler_enabled_in_config
+  const primaryFrequency = primarySchedule ? inferScheduleFromCron(primarySchedule.cron_utc).frequency : null
+  const updatesCurrentMonth =
+    primarySchedule != null && (primaryFrequency === 'daily' || primaryFrequency === 'weekly')
 
   useEffect(() => {
     setRunsPanelScheduleId(null)
@@ -459,6 +462,16 @@ export function DigestSchedulePanel({
             <Alert>
               <AlertDescription className="text-pretty text-sm">
                 Планировщик на сервере выключен. Детали доступны в диагностике ниже.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {updatesCurrentMonth ? (
+            <Alert className="border-amber-200/80 bg-amber-50/80 dark:border-amber-900/50 dark:bg-amber-950/30">
+              <AlertDescription className="text-pretty text-sm text-amber-950/90 dark:text-amber-50/90">
+                Автозапуск работает, но снимки группируются по месяцу. При запуске каждый день или каждую неделю
+                система обновляет текущий период ({new Date().toISOString().slice(0, 7)}), а новые выводы в трендах
+                появятся после накопления следующего периода.
               </AlertDescription>
             </Alert>
           ) : null}
