@@ -52,6 +52,11 @@ export function TrendSnapshotSheet({
 }: TrendSnapshotSheetProps) {
   const monthly = detail ? detailToMonthlyResponse(detail) : null
   const isBaseline = detail?.structured_delta?.is_baseline === true
+  const isEmptySnapshot =
+    detail != null &&
+    !loading &&
+    !detail.digest_available &&
+    detail.works.length === 0
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -70,7 +75,15 @@ export function TrendSnapshotSheet({
             </Alert>
           ) : null}
 
-          {detail && !detail.digest_available && !loading ? (
+          {isEmptySnapshot ? (
+            <Alert>
+              <AlertDescription className="text-pretty text-sm">
+                Снимок за этот период есть, но текст дайджеста и список работ недоступны.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {detail && !detail.digest_available && !loading && detail.works.length > 0 ? (
             <Alert>
               <AlertDescription className="text-pretty text-sm">
                 Текст дайджеста для этого периода не сохранён (старый снимок). Ниже — список работ в топе (

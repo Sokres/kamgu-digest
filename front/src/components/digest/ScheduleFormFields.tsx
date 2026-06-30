@@ -1,4 +1,5 @@
 import { ScheduleUtcTimeFields } from '@/components/ScheduleUtcTimeFields'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -51,6 +52,9 @@ export function ScheduleFormFields({
   onTopicsFromSnapshot,
   snapshotTopicsAvailable,
 }: ScheduleFormFieldsProps) {
+  const updatesCurrentMonth = fields.preset === 'daily' || fields.preset === 'weekly'
+  const currentMonth = new Date().toISOString().slice(0, 7)
+
   return (
     <div className="space-y-4">
       {showEnabled && onEnabledChange != null ? (
@@ -81,6 +85,15 @@ export function ScheduleFormFields({
           </SelectContent>
         </Select>
       </div>
+
+      {updatesCurrentMonth ? (
+        <Alert className="border-amber-200/80 bg-amber-50/80 dark:border-amber-900/50 dark:bg-amber-950/30">
+          <AlertDescription className="text-pretty text-sm text-amber-950/90 dark:text-amber-50/90">
+            Снимки группируются по месяцу. При такой частоте система обновляет текущий период ({currentMonth}), а новые
+            выводы в «Трендах» появятся после накопления следующего месяца.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <ScheduleUtcTimeFields
         frequency={fields.preset}
