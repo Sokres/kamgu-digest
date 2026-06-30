@@ -3,11 +3,9 @@ import { Link, useOutletContext, useSearchParams } from 'react-router-dom'
 
 import { DigestOnceExtras } from '@/components/digest/DigestOnceExtras'
 import { DigestSchedulePanel } from '@/components/digest/DigestSchedulePanel'
-import { DigestScheduleStatus } from '@/components/digest/DigestScheduleStatus'
 import { DigestSharedParams } from '@/components/digest/DigestSharedParams'
 import { DigestSnapshotPanel } from '@/components/digest/DigestSnapshotPanel'
 import { DigestResultView } from '@/components/DigestResultView'
-import { PageOnboarding } from '@/components/PageOnboarding'
 import { StructuredDeltaView } from '@/components/StructuredDeltaView'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -29,11 +27,50 @@ import { DIGEST_TABS, parseDigestTab, type DigestTabId } from '@/lib/digestTabs'
 import { getMonthlyInternalKey } from '@/lib/settings'
 import type { DigestRequest, DigestResponse, MonthlyDigestResponse, TrendProfileSummary } from '@/types/api'
 
-export function DigestPage() {
+function DigestAhaPanel({ data }: { data: DigestResponse | MonthlyDigestResponse }) {
+  const meta = data.meta
+  const sourceCount =
+    meta?.digest_mode === 'web_snippets'
+      ? meta.web_snippets_used
+      : (meta?.after_dedupe ??
+        [meta?.candidates_openalex, meta?.candidates_semantic_scholar, meta?.candidates_core]
+          .filter((v): v is number => typeof v === 'number')
+          .reduce((sum, v) => sum + v, 0))
+  const selectedCount = meta?.used_for_llm ?? data.publications_used.length
+  const cardCount = data.article_cards.length
+
+  const items = [
+    { label: 'найдено', value: sourceCount ?? '—' },
+    { label: 'выбрано для LLM', value: selectedCount || '—' },
+    { label: 'карточек статей', value: cardCount || '—' },
+    { label: 'дайджест', value: 'RU / EN' },
+  ]
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {items.map((item) => (
+        <div key={item.label} className="rounded-lg border border-border/75 bg-card/90 p-4 shadow-sm">
+          <div className="text-2xl font-semibold tracking-tight text-foreground">{item.value}</div>
+          <div className="mt-1 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+            {item.label}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+type DigestPageProps = {
+  forcedTab?: DigestTabId
+}
+
+export function DigestPage({ forcedTab }: DigestPageProps) {
   const { apiBase } = useOutletContext<{ apiBase: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
-  const activeTab = parseDigestTab(searchParams.get('tab'))
+  const activeTab = forcedTab ?? parseDigestTab(searchParams.get('tab'))
+  const showModeTabs = forcedTab == null
   const form = useDigestFormState()
+  const { internalKeyField, setSelectedProfileId } = form
   const schedules = useDigestSchedules(apiBase, form.internalKeyField)
 
   const [trendProfiles, setTrendProfiles] = useState<TrendProfileSummary[]>([])
@@ -56,25 +93,25 @@ export function DigestPage() {
 
   const loadTrendProfilesList = useCallback(
     async (preferProfileId?: string) => {
-      const internalKey = form.internalKeyField.trim() || getMonthlyInternalKey()
+      const internalKey = internalKeyField.trim() || getMonthlyInternalKey()
       setProfilesLoading(true)
       try {
         const list = await fetchTrendProfiles(apiBase, { internalKey })
         setTrendProfiles(list)
         const prefer = preferProfileId?.trim()
-        form.setSelectedProfileId((prev) => {
+        setSelectedProfileId((prev) => {
           if (prefer && list.some((p) => p.profile_id === prefer)) return prefer
           if (prev && list.some((p) => p.profile_id === prev)) return prev
           return list[0]?.profile_id ?? ''
         })
       } catch {
         setTrendProfiles([])
-        form.setSelectedProfileId('')
+        setSelectedProfileId('')
       } finally {
         setProfilesLoading(false)
       }
     },
-    [apiBase, form.internalKeyField, form.setSelectedProfileId]
+    [apiBase, internalKeyField, setSelectedProfileId]
   )
 
   useEffect(() => {
@@ -150,37 +187,29 @@ export function DigestPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8 pb-8">
-      <PageOnboarding
-        title="Дайджест литературы"
-        steps={[
-          {
-            title: 'Общие параметры',
-            detail: 'Темы, режим источников и лимиты задаются один раз для всех режимов запуска.',
-          },
-          {
-            title: 'Разовый или сохранение для трендов',
-            detail:
-              'Разовый — только текст и список статей. Сохранение для трендов — запись по месяцам и сравнение на вкладке «Тренды».',
-          },
-          {
-            title: 'Расписание и пресеты',
-            detail:
-              'Пресеты параметров общие для разового запуска и снимка. У каждого направления — своё расписание автозапуска.',
-          },
-        ]}
+    <div className="mx-auto max-w-5xl space-y-7 pb-8">
+      <DigestSharedParams
+        form={form}
+        eyebrow={activeTab === 'snapshot' ? 'Monitoring setup' : undefined}
+        title={activeTab === 'snapshot' ? 'Что мониторим?' : undefined}
+        description={
+          activeTab === 'snapshot'
+            ? 'Задайте тему для следующего снимка направления, сохраните период и настройте автозапуск.'
+            : undefined
+        }
+        topicLabel={activeTab === 'snapshot' ? 'Тема мониторинга' : undefined}
       />
 
-      <DigestSharedParams form={form} />
-
       <Tabs value={activeTab} onValueChange={(v) => setTab(parseDigestTab(v))}>
-        <TabsList variant="line" className="w-full max-w-full flex-wrap justify-start gap-1">
-          {DIGEST_TABS.map((t) => (
-            <TabsTrigger key={t.id} value={t.id} className="px-3">
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        {showModeTabs ? (
+          <TabsList variant="line" className="w-full max-w-full flex-wrap justify-start gap-1">
+            {DIGEST_TABS.map((t) => (
+              <TabsTrigger key={t.id} value={t.id} className="px-3">
+                {t.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        ) : null}
 
         <TabsContent value="once" className="mt-6 space-y-8">
           <DigestOnceExtras
@@ -210,9 +239,10 @@ export function DigestPage() {
             </div>
             {!onceLoading && !onceData && !onceError ? (
               <p className="rounded-lg border border-dashed border-border/80 bg-muted/15 px-4 py-3 text-sm text-muted-foreground print:hidden">
-                Здесь появится дайджест RU/EN после запуска на вкладке «Разовый».
+                Здесь появятся ключевые цифры, RU/EN дайджест и карточки публикаций.
               </p>
             ) : null}
+            {onceData && !onceLoading ? <DigestAhaPanel data={onceData} /> : null}
             <DigestResultView
               loading={onceLoading}
               loadingHint={
@@ -236,12 +266,6 @@ export function DigestPage() {
             loading={snapLoading}
             setLoading={setSnapLoading}
             onResult={handleSnapResult}
-          />
-          <DigestScheduleStatus
-            profileId={form.selectedProfileId}
-            trendProfiles={trendProfiles}
-            digestSchedules={schedules.digestSchedules}
-            loading={schedules.loading}
           />
           <DigestSchedulePanel
             apiBase={apiBase}
@@ -278,6 +302,7 @@ export function DigestPage() {
                 После запуска снимка — дайджест RU/EN и блок изменений относительно прошлого периода.
               </p>
             ) : null}
+            {snapData && !snapLoading ? <DigestAhaPanel data={snapData} /> : null}
             <DigestResultView
               loading={snapLoading}
               loadingHint={

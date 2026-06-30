@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
 
-import { PageOnboarding } from '@/components/PageOnboarding'
 import { profileDisplayName, profileHasDisplayName } from '@/components/ProfileDirectionPicker'
 import { TrendActivityFeed } from '@/components/trends/TrendActivityFeed'
 import { TrendAnalysisPanel } from '@/components/trends/TrendAnalysisPanel'
@@ -45,6 +44,7 @@ import { getMonthlyInternalKey } from '@/lib/settings'
 import type {
   TrendAnalysisResponse,
   TrendHighlightsResponse,
+  TrendPeriodHighlight,
   TrendProfileSummary,
   TrendSeriesPoint,
   TrendSnapshotDetail,
@@ -52,6 +52,101 @@ import type {
 import { cn } from '@/lib/utils'
 
 const COMPARE_NONE = '__none__'
+
+function latestComparable(points: TrendPeriodHighlight[]): TrendPeriodHighlight | null {
+  return [...points].reverse().find((point) => !point.is_baseline) ?? null
+}
+
+function TrendEventsPanel({
+  points,
+  loading,
+}: {
+  points: TrendPeriodHighlight[]
+  loading: boolean
+}) {
+  const latest = latestComparable(points)
+
+  if (loading) {
+    return (
+      <Card className="border-primary/20 bg-primary/5">
+        <CardContent className="p-5 text-sm text-muted-foreground">Собираем события направления…</CardContent>
+      </Card>
+    )
+  }
+
+  if (!latest) {
+    return (
+      <Card className="border-border/75 bg-card/95">
+        <CardContent className="p-5">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">События направления</p>
+          <h2 className="mt-2 text-xl font-semibold tracking-tight">Нужно минимум два снимка</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            После второго периода здесь появятся входы в топ, выходы из топа, рост цитирований и сдвиги концептов.
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const citationDelta = latest.top_citation_gain?.delta
+  const conceptDelta = latest.top_concept_shift?.delta
+  const events = [
+    {
+      label: 'новых работ в топе',
+      value: latest.entered_count ?? 0,
+      tone: 'text-emerald-700 dark:text-emerald-300',
+    },
+    {
+      label: 'вышли из топа',
+      value: latest.left_count ?? 0,
+      tone: 'text-amber-700 dark:text-amber-300',
+    },
+    {
+      label: 'макс. рост цитирования',
+      value: citationDelta == null ? '—' : `${citationDelta > 0 ? '+' : ''}${citationDelta}`,
+      tone: 'text-primary',
+    },
+    {
+      label: latest.top_concept_shift?.name ?? 'сдвиг концепта',
+      value: conceptDelta == null ? '—' : `${conceptDelta > 0 ? '+' : ''}${conceptDelta.toFixed(3)}`,
+      tone: 'text-foreground',
+    },
+  ]
+
+  return (
+    <Card className="border-primary/20 bg-primary/5">
+      <CardContent className="space-y-5 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">События направления</p>
+            <h2 className="mt-2 text-xl font-semibold tracking-tight">
+              Последний период: {latest.period}
+            </h2>
+            {latest.compared_period ? (
+              <p className="mt-1 text-sm text-muted-foreground">Сравнение с {latest.compared_period}</p>
+            ) : null}
+          </div>
+          <Badge variant="secondary">{latest.work_count} работ в топе</Badge>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {events.map((event) => (
+            <div key={event.label} className="rounded-lg border border-border/70 bg-card/85 p-4">
+              <div className={cn('text-2xl font-semibold tracking-tight', event.tone)}>{event.value}</div>
+              <div className="mt-1 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                {event.label}
+              </div>
+            </div>
+          ))}
+        </div>
+        {latest.top_citation_gain ? (
+          <p className="text-pretty text-sm leading-relaxed text-foreground/90">
+            Самый заметный рост цитирования: «{latest.top_citation_gain.title}».
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
 
 export function TrendsPage() {
   const { apiBase } = useOutletContext<{ apiBase: string }>()
@@ -330,33 +425,14 @@ export function TrendsPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-8">
-      <PageOnboarding
-        title="Тренды по сохранённым снимкам"
-        steps={[
-          {
-            title: 'ИИ-анализ',
-            detail:
-              'При двух и более снимках LLM-агент формирует сводную интерпретацию динамики по всему ряду; результат кэшируется до появления нового периода.',
-          },
-          {
-            title: 'Лента и метрики',
-            detail:
-              'KPI, лента изменений (вошли/вышли, Δ цитирований, концепты), графики размера топа и эволюция OpenAlex-концептов.',
-          },
-          {
-            title: 'Настройки направления',
-            detail:
-              'Имя и заметка — в карточке профиля ниже. Темы и сохранение для трендов — на странице дайджеста.',
-          },
-        ]}
-      />
-
-      <div className="text-sm text-muted-foreground print:hidden">
-        Здесь отображаются сохранённые ежемесячные снимки по направлениям: сводные показатели, динамика размера топа,
-        прирост к прошлому периоду и сравнение двух направлений на одном графике. Число «работ в топе» — сколько статей
-        попало в ваш фиксированный топ в выбранном месяце.
-      </div>
+    <div className="mx-auto flex max-w-6xl flex-col gap-7">
+      <section className="rounded-lg border border-border/75 bg-card/95 p-5 shadow-sm">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">Trend monitor</p>
+        <h2 className="mt-2 text-2xl font-semibold tracking-tight">Что изменилось в направлении?</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+          Снимки превращаются в события: новые работы, выходы из топа, прирост цитирований, сдвиги концептов и LLM-анализ.
+        </p>
+      </section>
 
       {error ? (
         <Alert variant="destructive">
@@ -374,7 +450,9 @@ export function TrendsPage() {
 
       {selectedId ? (
         <>
-        <Card>
+        <TrendEventsPanel points={highlights?.points ?? []} loading={loadingHighlights} />
+
+        <Card className="border-border/75 bg-card/95">
           <CardHeader>
             <CardTitle className="flex flex-wrap items-center gap-2">
               Динамика
@@ -545,8 +623,8 @@ export function TrendsPage() {
           ) : profiles.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Пока нет направлений — создайте одно полем выше или на странице{' '}
-              <Link className="font-medium text-primary underline-offset-4 hover:underline" to="/?tab=snapshot">
-                дайджеста (вкладка «Тренды и расписание»)
+              <Link className="font-medium text-primary underline-offset-4 hover:underline" to="/monitoring">
+                дайджеста (вкладка «Мониторинг»)
               </Link>
               . Снимки появятся после первого успешного запуска дайджеста для выбранного направления.
             </p>

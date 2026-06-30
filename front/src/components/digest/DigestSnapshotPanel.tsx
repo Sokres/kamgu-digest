@@ -92,7 +92,7 @@ export function DigestSnapshotPanel({
   return (
     <Card className="border-border/70 shadow-sm">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-lg">Сохранение для трендов</CardTitle>
+        <CardTitle className="text-lg">Мониторинг направления</CardTitle>
         <CardDescription className="text-pretty">
           Фиксирует результаты за месяц и сравнивает с прошлым периодом. Графики — на странице{' '}
           <Link to="/trends" className="text-primary underline-offset-2 hover:underline">

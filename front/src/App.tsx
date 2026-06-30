@@ -31,10 +31,11 @@ export default function App() {
           <Route path="/shared/digest/:token" element={<SharedDigestPage />} />
           <Route element={<RequireAuth />}>
             <Route element={<AppShell apiBase={apiBase} onApiBaseChange={setApiBase} />}>
-              <Route index element={<DigestPage />} />
+              <Route index element={<DigestPage forcedTab="once" />} />
+              <Route path="monitoring" element={<DigestPage forcedTab="snapshot" />} />
               <Route path="saved" element={<SavedDigestsPage />} />
               <Route path="saved/:id" element={<SavedDigestsPage />} />
-              <Route path="monthly" element={<Navigate to="/?tab=snapshot" replace />} />
+              <Route path="monthly" element={<Navigate to="/monitoring" replace />} />
               <Route path="trends" element={<TrendsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

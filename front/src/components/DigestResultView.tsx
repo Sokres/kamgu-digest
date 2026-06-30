@@ -231,53 +231,152 @@ function DigestExportBar({ data }: { data: DigestResponse | MonthlyDigestRespons
   )
 }
 
-function ArticleCardsList({ cards }: { cards: ArticleCard[] }) {
+function firstInsight(text: string): string {
+  const trimmed = text.trim()
+  if (!trimmed) return ''
+  const paragraphs = trimmed.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
+  return (paragraphs[0] ?? trimmed).replace(/^#+\s*/, '').slice(0, 520)
+}
+
+function DigestMainPanel({ data }: { data: DigestResponse | MonthlyDigestResponse }) {
+  const [copied, setCopied] = useState<string | null>(null)
+  const insight = firstInsight(data.digest_ru)
+  const questions = [
+    'Какие 5 статей стоит прочитать первыми?',
+    'Какие темы выглядят самыми новыми?',
+    'Что можно использовать для обзора литературы?',
+    'Какие направления стоит мониторить дальше?',
+  ]
+
+  async function copyQuestion(question: string) {
+    await copyTextToClipboard(`${question}\n\nКонтекст: текущий KamGU Research Digest.`)
+    setCopied(question)
+    window.setTimeout(() => setCopied(null), 2200)
+  }
+
+  return (
+    <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="rounded-lg border border-primary/20 bg-primary/5 p-5">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">Главное</p>
+        <h3 className="mt-2 text-xl font-semibold tracking-tight">Что важно в этом дайджесте</h3>
+        <p className="mt-3 text-pretty text-sm leading-relaxed text-foreground/90">
+          {insight || 'Дайджест сформирован. Ниже доступны RU/EN текст, карточки публикаций и экспорт.'}
+        </p>
+      </div>
+      <div className="rounded-lg border border-border/75 bg-card/95 p-5">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Ask this digest</p>
+        <div className="mt-3 flex flex-col gap-2">
+          {questions.map((question) => (
+            <Button
+              key={question}
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-auto justify-start whitespace-normal py-2 text-left"
+              onClick={() => void copyQuestion(question)}
+            >
+              {question}
+            </Button>
+          ))}
+        </div>
+        {copied ? <p className="mt-3 text-xs text-muted-foreground">Вопрос скопирован.</p> : null}
+      </div>
+    </section>
+  )
+}
+
+function ArticleCardsList({ cards, publications }: { cards: ArticleCard[]; publications: PublicationInput[] }) {
   if (!cards.length) return <p className="text-sm text-muted-foreground">Нет карточек.</p>
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {cards.map((c, i) => {
         const summary = (c.summary_ru || c.summary_en || '').trim()
+        const publication = publications[i]
+        const source = publication?.source?.trim()
+        const citationCount = publication?.citation_count
+        const doi = publication?.doi?.trim()
+        const concepts = publication?.concepts?.slice(0, 3) ?? []
         return (
-        <Card key={`${c.title}-${i}`}>
-          <CardHeader className="pb-2">
-            <CardTitle className="font-heading text-base font-semibold leading-snug tracking-tight">
-              {c.url ? (
-                <a
-                  href={c.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  {c.title}
-                </a>
-              ) : (
-                c.title
-              )}
-              {c.year != null ? (
-                <Badge variant="secondary" className="ml-2 align-middle">
-                  {c.year}
+          <Card key={`${c.title}-${i}`} className="border-border/75 bg-card/95 shadow-sm">
+            <CardHeader className="space-y-3 pb-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {source ? (
+                  <Badge variant="secondary" className="max-w-full truncate">
+                    {source}
+                  </Badge>
+                ) : null}
+                {c.year != null ? <Badge variant="outline">{c.year}</Badge> : null}
+                {citationCount != null ? (
+                  <Badge variant="outline">{citationCount} citations</Badge>
+                ) : null}
+                <Badge className="bg-amber-500/15 text-amber-900 hover:bg-amber-500/15 dark:text-amber-100">
+                  relevance
                 </Badge>
+              </div>
+              <CardTitle className="font-heading text-base font-semibold leading-snug tracking-tight">
+                {c.url ? (
+                  <a
+                    href={c.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    {c.title}
+                  </a>
+                ) : (
+                  c.title
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              {summary ? (
+                <p className="text-pretty leading-relaxed text-foreground/90">{summary}</p>
               ) : null}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            {summary ? (
-              <p className="text-pretty leading-relaxed text-foreground/90">{summary}</p>
-            ) : null}
-            {c.why_relevant ? (
-              <p>
-                <span className="font-medium">Релевантность:</span> {c.why_relevant}
-              </p>
-            ) : null}
-            {c.bullets?.length ? (
-              <ul className="list-disc pl-4 space-y-1">
-                {c.bullets.map((b, j) => (
-                  <li key={j}>{b}</li>
-                ))}
-              </ul>
-            ) : null}
-          </CardContent>
-        </Card>
+              {c.why_relevant ? (
+                <p className="rounded-md bg-muted/35 px-3 py-2 text-xs leading-relaxed">
+                  <span className="font-medium text-foreground">Почему важно: </span>
+                  {c.why_relevant}
+                </p>
+              ) : null}
+              {concepts.length ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {concepts.map((concept) => (
+                    <Badge key={concept.id ?? concept.display_name} variant="outline" className="font-normal">
+                      {concept.display_name}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+              {c.bullets?.length ? (
+                <ul className="list-disc space-y-1 pl-4 text-sm leading-relaxed">
+                  {c.bullets.map((b, j) => (
+                    <li key={j}>{b}</li>
+                  ))}
+                </ul>
+              ) : null}
+              <div className="flex flex-wrap gap-2 pt-1">
+                {c.url ? (
+                  <Button type="button" variant="secondary" size="sm" asChild>
+                    <a href={c.url} target="_blank" rel="noreferrer">
+                      Открыть
+                    </a>
+                  </Button>
+                ) : null}
+                {publication?.oa_url ? (
+                  <Button type="button" variant="outline" size="sm" asChild>
+                    <a href={publication.oa_url} target="_blank" rel="noreferrer">
+                      PDF
+                    </a>
+                  </Button>
+                ) : null}
+                {doi ? (
+                  <span className="inline-flex min-w-0 items-center rounded-md border border-border/80 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                    <span className="truncate">doi:{doi}</span>
+                  </span>
+                ) : null}
+              </div>
+            </CardContent>
+          </Card>
         )
       })}
     </div>
@@ -395,6 +494,8 @@ export function DigestResultView(props: {
 
   return (
     <div className="space-y-6">
+      <DigestMainPanel data={data} />
+
       <DigestDisclaimer />
       <DataSourcesNote meta={data.meta} />
 
@@ -420,11 +521,12 @@ export function DigestResultView(props: {
         </Alert>
       ) : null}
 
-      <DigestExportBar data={data} />
-
-      <div>
-        <h3 className="text-lg font-heading font-semibold mb-2">Мета</h3>
-        <MetaBlock meta={data.meta} />
+      <div className="rounded-lg border border-border/75 bg-card/90 p-4">
+        <DigestExportBar data={data} />
+        <div className="mt-4">
+          <h3 className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Метаданные</h3>
+          <MetaBlock meta={data.meta} />
+        </div>
       </div>
 
       <Separator />
@@ -443,8 +545,8 @@ export function DigestResultView(props: {
       </Tabs>
 
       <div>
-        <h3 className="text-lg font-heading font-semibold mb-3">Карточки</h3>
-        <ArticleCardsList cards={data.article_cards} />
+        <h3 className="text-lg font-heading font-semibold mb-3">Карточки публикаций</h3>
+        <ArticleCardsList cards={data.article_cards} publications={data.publications_used} />
       </div>
 
       {data.publications_used.length > 0 ? (

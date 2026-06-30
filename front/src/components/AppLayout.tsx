@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { SettingsSheet } from '@/components/SettingsSheet'
 import { useAuth } from '@/context/AuthContext'
@@ -15,28 +15,32 @@ import {
   PresentationBarChart01Icon,
   Settings02Icon,
 } from '@hugeicons/core-free-icons'
-import { DIGEST_TAB_SUBTITLES, parseDigestTab } from '@/lib/digestTabs'
+import { DIGEST_TAB_SUBTITLES } from '@/lib/digestTabs'
 
 const ROUTE_META: Record<string, { title: string; subtitle: string }> = {
   '/': {
-    title: 'Дайджест',
-    subtitle: DIGEST_TAB_SUBTITLES.once,
+    title: 'Новый дайджест',
+    subtitle: 'Сформируйте обзор поля из темы, корпуса публикаций и LLM-сводки',
   },
   '/trends': {
     title: 'Тренды',
-    subtitle: 'История периодов по направлениям и динамика размера топа',
+    subtitle: 'События, динамика и изменения научных направлений',
+  },
+  '/monitoring': {
+    title: 'Мониторинг',
+    subtitle: 'Снимки направлений, расписания и сравнение периодов',
   },
   '/saved': {
-    title: 'Сохранённые',
-    subtitle: 'Архив разовых дайджестов на сервере',
+    title: 'Research History',
+    subtitle: 'Архив исследований, сохранённые темы и результаты',
   },
 }
 
-function routeMeta(pathname: string, digestTab: ReturnType<typeof parseDigestTab>): { title: string; subtitle: string } {
-  if (pathname === '/' || pathname === '/monthly') {
+function routeMeta(pathname: string): { title: string; subtitle: string } {
+  if (pathname === '/') {
     return {
-      title: 'Дайджест',
-      subtitle: DIGEST_TAB_SUBTITLES[digestTab],
+      title: 'Новый дайджест',
+      subtitle: DIGEST_TAB_SUBTITLES.once,
     }
   }
   if (pathname === '/saved' || pathname.startsWith('/saved/')) {
@@ -104,10 +108,9 @@ export function AppLayout(props: {
   const { apiBase, onApiBaseChange, children } = props
   const [settingsOpen, setSettingsOpen] = useState(false)
   const location = useLocation()
-  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { authEnabled, username, logout } = useAuth()
-  const meta = routeMeta(location.pathname, parseDigestTab(searchParams.get('tab')))
+  const meta = routeMeta(location.pathname)
 
   function handleLogout() {
     logout()
@@ -118,12 +121,12 @@ export function AppLayout(props: {
     <div className="flex min-h-screen w-full flex-col bg-background md:flex-row">
       <aside className="flex shrink-0 flex-col border-b border-sidebar-border bg-sidebar print:hidden md:sticky md:top-0 md:h-screen md:w-[260px] md:border-b-0 md:border-r">
         <div className="flex items-center gap-3 px-5 py-4 md:py-5">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-primary to-primary/70 shadow-sm">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary shadow-sm">
             <span className="text-sm font-bold tracking-tight text-primary-foreground">K</span>
           </div>
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold tracking-tight text-sidebar-foreground">KamGU Digest</div>
-            <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Research</div>
+            <div className="truncate text-sm font-semibold tracking-tight text-sidebar-foreground">KamGU Research Digest</div>
+            <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Assistant</div>
           </div>
         </div>
 
@@ -136,15 +139,19 @@ export function AppLayout(props: {
             className={(p) => cn(navClass(p), 'flex-1 justify-center md:flex-none md:justify-start')}
           >
             <HugeiconsIcon icon={BookSearchIcon} strokeWidth={2} className="size-[18px] opacity-90" />
-            Дайджест
+            Новый дайджест
+          </NavLink>
+          <NavLink to="/monitoring" className={(p) => cn(navClass(p), 'flex-1 justify-center md:flex-none md:justify-start')}>
+            <HugeiconsIcon icon={PresentationBarChart01Icon} strokeWidth={2} className="size-[18px] opacity-90" />
+            Мониторинг
+          </NavLink>
+          <NavLink to="/saved" className={(p) => cn(navClass(p), 'flex-1 justify-center md:flex-none md:justify-start')}>
+            <HugeiconsIcon icon={Bookmark01Icon} strokeWidth={2} className="size-[18px] opacity-90" />
+            Архив
           </NavLink>
           <NavLink to="/trends" className={(p) => cn(navClass(p), 'flex-1 justify-center md:flex-none md:justify-start')}>
             <HugeiconsIcon icon={PresentationBarChart01Icon} strokeWidth={2} className="size-[18px] opacity-90" />
             Тренды
-          </NavLink>
-          <NavLink to="/saved" className={(p) => cn(navClass(p), 'flex-1 justify-center md:flex-none md:justify-start')}>
-            <HugeiconsIcon icon={Bookmark01Icon} strokeWidth={2} className="size-[18px] opacity-90" />
-            Сохранённые
           </NavLink>
         </nav>
 

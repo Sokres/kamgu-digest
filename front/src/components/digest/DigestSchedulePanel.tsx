@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { profileDisplayName } from '@/components/ProfileDirectionPicker'
 import { ScheduleFormFields } from '@/components/digest/ScheduleFormFields'
@@ -36,7 +36,7 @@ import {
   toScheduleCreateBody,
   toSchedulePatchBody,
 } from '@/lib/scheduleParams'
-import { formatUtcTime24, parseFixedHourMinute } from '@/lib/scheduleLabels'
+import { formatUtcTime24, parseFixedHourMinute, scheduleLocalHint } from '@/lib/scheduleLabels'
 import {
   scheduleLastStatusIsFailure,
   scheduleLastStatusLabel,
@@ -60,6 +60,28 @@ type DigestSchedulePanelProps = {
   setSchedulesError: (msg: string | null) => void
   onReloadSchedules: () => Promise<void>
   scheduleInternalKey: () => string
+}
+
+function pickLatestRun(
+  items: PeriodicDigestScheduleOut[],
+): { at: string; status: string | null; error: string | null } | null {
+  let best: { at: string; status: string | null; error: string | null } | null = null
+  for (const schedule of items) {
+    if (!schedule.last_run_at) continue
+    if (!best || schedule.last_run_at > best.at) {
+      best = {
+        at: schedule.last_run_at,
+        status: schedule.last_status ?? null,
+        error: schedule.last_error ?? null,
+      }
+    }
+  }
+  return best
+}
+
+function scheduleTimeLabel(cron: string): string {
+  const hm = parseFixedHourMinute(cron)
+  return hm ? `${formatUtcTime24(hm.hour, hm.minute)} UTC` : 'Своё расписание'
 }
 
 export function DigestSchedulePanel({
@@ -88,10 +110,13 @@ export function DigestSchedulePanel({
   const [runsLoading, setRunsLoading] = useState(false)
   const [runsError, setRunsError] = useState<string | null>(null)
 
-  const profileSchedules =
-    profileId && digestSchedules?.items.length
-      ? digestSchedules.items.filter((s) => s.profile_id === profileId)
-      : []
+  const profileSchedules = useMemo(
+    () =>
+      profileId && digestSchedules?.items.length
+        ? digestSchedules.items.filter((s) => s.profile_id === profileId)
+        : [],
+    [digestSchedules?.items, profileId],
+  )
 
   const selectedProfile = trendProfiles.find((p) => p.profile_id === profileId)
   const profileLabel = profileId
@@ -106,6 +131,10 @@ export function DigestSchedulePanel({
     : ''
 
   const snapshotTopics = selectedProfile?.topic_queries ?? []
+  const enabledCount = profileSchedules.filter((s) => s.enabled).length
+  const primarySchedule = profileSchedules.find((s) => s.enabled) ?? profileSchedules[0] ?? null
+  const latestRun = pickLatestRun(profileSchedules)
+  const schedulerOff = digestSchedules && !digestSchedules.scheduler_enabled_in_config
 
   useEffect(() => {
     setRunsPanelScheduleId(null)
@@ -127,7 +156,7 @@ export function DigestSchedulePanel({
         )
         .finally(() => setRunsLoading(false))
     }
-  }, [apiBase, profileId, digestSchedules])
+  }, [apiBase, profileId, profileSchedules, scheduleInternalKey])
 
   function openEditSheet(s: PeriodicDigestScheduleOut) {
     setEditingSchedule(s)
@@ -253,10 +282,9 @@ export function DigestSchedulePanel({
   }
 
   function renderScheduleItem(s: PeriodicDigestScheduleOut) {
-    const hm = parseFixedHourMinute(s.cron_utc)
-    const timeLabel = hm ? `${formatUtcTime24(hm.hour, hm.minute)} UTC` : s.cron_utc
+    const timeLabel = scheduleTimeLabel(s.cron_utc)
     return (
-      <li key={s.id} className="flex flex-col gap-2 border-b border-border/50 pb-3 last:border-0 last:pb-0">
+      <li key={s.id} className="flex flex-col gap-2 rounded-lg border border-border/70 bg-background/70 p-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 font-medium break-words">
@@ -275,6 +303,7 @@ export function DigestSchedulePanel({
                 </Badge>
               ) : null}
             </div>
+            <div className="text-xs text-muted-foreground">{scheduleLocalHint(s.cron_utc)}</div>
             <div className="text-xs text-muted-foreground break-all">{s.topic_queries.join(' · ')}</div>
             {s.last_run_at ? (
               <div className="text-xs text-muted-foreground">
@@ -342,19 +371,19 @@ export function DigestSchedulePanel({
 
   return (
     <>
-      <Card id="schedule" className="border-border/70 shadow-sm scroll-mt-24">
+      <Card id="schedule" className="scroll-mt-24 border-border/70 bg-card/95 shadow-sm">
         <CardHeader className="space-y-1">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <CardTitle className="text-lg">Расписание для направления</CardTitle>
+              <CardTitle className="text-lg">Автомониторинг</CardTitle>
               <CardDescription className="text-pretty mt-1 max-w-2xl">
                 {profileId ? (
                   <>
-                    Автозапуск снимка для «<span className="font-medium text-foreground">{profileLabel}</span>».
-                    Параметры поиска — из общего блока выше; у каждого направления своё расписание.
+                    Автоматически создаёт снимки для «<span className="font-medium text-foreground">{profileLabel}</span>»
+                    и пополняет тренды без ручного запуска.
                   </>
                 ) : (
-                  <>Выберите направление выше — затем можно задать автозапуск по времени (UTC на сервере).</>
+                  <>Выберите направление выше — затем можно включить регулярный мониторинг.</>
                 )}
               </CardDescription>
             </div>
@@ -379,48 +408,119 @@ export function DigestSchedulePanel({
           {!profileId ? (
             <Alert>
               <AlertDescription>
-                Расписание привязано к направлению — выберите или создайте его в блоке «Снимок» выше.
+                Автомониторинг привязан к направлению — выберите или создайте его в блоке «Снимок» выше.
               </AlertDescription>
             </Alert>
           ) : null}
 
-          {profileId && profileSchedules.length > 0 ? (
-            <ul className="space-y-3 rounded-lg border border-border/80 bg-muted/10 p-3 text-sm">
-              {profileSchedules.map(renderScheduleItem)}
-            </ul>
-          ) : profileId && !schedulesLoading ? (
-            <p className="text-sm text-muted-foreground">Для этого направления расписания пока нет.</p>
+          {profileId ? (
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-border/75 bg-muted/15 p-4">
+                <div className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Состояние</div>
+                <div className="mt-2 text-xl font-semibold tracking-tight">
+                  {enabledCount > 0 ? 'Включён' : profileSchedules.length > 0 ? 'На паузе' : 'Не настроен'}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {enabledCount > 0
+                    ? `${enabledCount} активн. распис.`
+                    : profileSchedules.length > 0
+                      ? 'Все расписания выключены'
+                      : 'Можно включить ниже'}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/75 bg-muted/15 p-4">
+                <div className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Частота</div>
+                <div className="mt-2 text-xl font-semibold tracking-tight">
+                  {primarySchedule ? scheduleTimeLabel(primarySchedule.cron_utc) : '—'}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {primarySchedule ? scheduleLocalHint(primarySchedule.cron_utc) : 'Время появится после настройки'}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/75 bg-muted/15 p-4">
+                <div className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Последний запуск</div>
+                <div className="mt-2 text-xl font-semibold tracking-tight">
+                  {latestRun ? scheduleLastStatusLabel(latestRun.status) : '—'}
+                </div>
+                <p className="mt-1 break-words text-xs text-muted-foreground">
+                  {latestRun ? latestRun.at : 'Ещё не запускалось'}
+                </p>
+              </div>
+            </div>
           ) : null}
 
-          <form onSubmit={handleCreateSchedule} className="space-y-4 border-t border-border/60 pt-6">
-            <h3 className="text-sm font-medium">
-              {profileId ? `Новое расписание для «${profileLabel}»` : 'Новое расписание'}
-            </h3>
-            <ScheduleFormFields
-              idPrefix="sch-create"
-              fields={createForm.fields}
-              onPresetChange={createForm.setPreset}
-              onHourChange={createForm.setHourUtc}
-              onMinuteChange={createForm.setMinuteUtc}
-              onWeekdayChange={createForm.setWeekday}
-              onCronChange={createForm.setCron}
-              onTopicTextChange={createForm.setTopicText}
-              onTopicsFromShared={() => createForm.setTopicText(form.topicQueriesFromLines().join('\n'))}
-              onTopicsFromSnapshot={
-                snapshotTopics.length
-                  ? () => createForm.setTopicText(snapshotTopics.join('\n'))
-                  : undefined
-              }
-              snapshotTopicsAvailable={snapshotTopics.length > 0}
-            />
-            <Button type="submit" disabled={schSubmitting || !profileId} variant="secondary">
-              {schSubmitting ? 'Сохранение…' : 'Сохранить расписание'}
-            </Button>
-          </form>
+          {latestRun?.error ? (
+            <Alert variant="destructive">
+              <AlertDescription className="break-words text-sm">{latestRun.error}</AlertDescription>
+            </Alert>
+          ) : null}
+
+          {schedulerOff ? (
+            <Alert>
+              <AlertDescription className="text-pretty text-sm">
+                Планировщик на сервере выключен. Детали доступны в диагностике ниже.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          <details className="group rounded-lg border border-border/80 bg-muted/10">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium">
+              <span>{profileSchedules.length ? 'Настроить автомониторинг' : 'Включить автомониторинг'}</span>
+              <span className="text-xs text-muted-foreground group-open:hidden">частота, время, темы</span>
+              <span className="hidden text-xs text-muted-foreground group-open:inline">Скрыть</span>
+            </summary>
+            <form onSubmit={handleCreateSchedule} className="space-y-4 border-t border-border/60 p-4">
+              <ScheduleFormFields
+                idPrefix="sch-create"
+                fields={createForm.fields}
+                onPresetChange={createForm.setPreset}
+                onHourChange={createForm.setHourUtc}
+                onMinuteChange={createForm.setMinuteUtc}
+                onWeekdayChange={createForm.setWeekday}
+                onCronChange={createForm.setCron}
+                onTopicTextChange={createForm.setTopicText}
+                onTopicsFromShared={() => createForm.setTopicText(form.topicQueriesFromLines().join('\n'))}
+                onTopicsFromSnapshot={
+                  snapshotTopics.length
+                    ? () => createForm.setTopicText(snapshotTopics.join('\n'))
+                    : undefined
+                }
+                snapshotTopicsAvailable={snapshotTopics.length > 0}
+              />
+              <Button type="submit" disabled={schSubmitting || !profileId} variant="secondary">
+                {schSubmitting ? 'Сохранение…' : 'Сохранить автомониторинг'}
+              </Button>
+            </form>
+          </details>
+
+          {profileId && profileSchedules.length > 0 ? (
+            <details className="group rounded-lg border border-border/80 bg-background/55">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium">
+                <span>Расписания и журнал</span>
+                <span className="text-xs text-muted-foreground group-open:hidden">
+                  {profileSchedules.length} запис.
+                </span>
+                <span className="hidden text-xs text-muted-foreground group-open:inline">Скрыть</span>
+              </summary>
+              <ul className="space-y-3 border-t border-border/60 p-4 text-sm">
+                {profileSchedules.map(renderScheduleItem)}
+              </ul>
+            </details>
+          ) : null}
 
           {totalSchedules > 0 ? (
             <details className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2 text-sm">
-              <summary className="cursor-pointer font-medium py-1">Все расписания ({totalSchedules})</summary>
+              <summary className="cursor-pointer py-1 font-medium">Диагностика ({totalSchedules})</summary>
+              {digestSchedules ? (
+                <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-3">
+                  <Badge variant={digestSchedules.scheduler_enabled_in_config ? 'default' : 'secondary'}>
+                    конфиг: {digestSchedules.scheduler_enabled_in_config ? 'вкл' : 'выкл'}
+                  </Badge>
+                  <Badge variant={digestSchedules.scheduler_running ? 'default' : 'outline'}>
+                    процесс: {digestSchedules.scheduler_running ? 'запущен' : 'не запущен'}
+                  </Badge>
+                </div>
+              ) : null}
               <ul className="mt-3 space-y-2 border-t border-border/50 pt-3">
                 {digestSchedules?.items.map((s) => {
                   const prof = trendProfiles.find((p) => p.profile_id === s.profile_id)
