@@ -29,7 +29,7 @@ export function TrendLatestSnapshotPanel({ latest, onOpen }: TrendLatestSnapshot
             </CardDescription>
           </div>
           {onOpen ? (
-            <Button type="button" variant="secondary" size="sm" onClick={() => onOpen(latest.period)}>
+            <Button type="button" variant="default" size="sm" onClick={() => onOpen(latest.period)}>
               Открыть снимок
             </Button>
           ) : null}

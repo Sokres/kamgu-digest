@@ -557,52 +557,60 @@ export function TrendsPage() {
                 </div>
                 ) : null}
 
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Период</TableHead>
-                      <TableHead className="text-right">Работ в топе</TableHead>
-                      <TableHead className="hidden text-right sm:table-cell">Δ к прошлому</TableHead>
-                      <TableHead className="hidden text-right md:table-cell">Δ %</TableHead>
-                      <TableHead className="text-right print:hidden">Подробнее</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {points.map((p) => (
-                      <TableRow key={p.period}>
-                        <TableCell className="font-mono text-sm">{p.period}</TableCell>
-                        <TableCell className="text-right tabular-nums">{p.work_count}</TableCell>
-                        <TableCell
-                          className={cn(
-                            'hidden text-right sm:table-cell',
-                            deltaSignedClass(p.delta_vs_prev ?? null),
-                          )}
-                        >
-                          {p.delta_vs_prev == null ? '—' : p.delta_vs_prev > 0 ? `+${p.delta_vs_prev}` : String(p.delta_vs_prev)}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            'hidden text-right md:table-cell',
-                            deltaSignedClass(p.pct_change_vs_prev ?? null),
-                          )}
-                        >
-                          {p.pct_change_vs_prev == null ? '—' : `${p.pct_change_vs_prev > 0 ? '+' : ''}${p.pct_change_vs_prev}%`}
-                        </TableCell>
-                        <TableCell className="text-right print:hidden">
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            className="h-8 min-w-[92px]"
-                            onClick={() => void openSnapshotPeriod(p.period)}
-                          >
-                            Открыть
-                          </Button>
-                        </TableCell>
+                <section className="space-y-3 rounded-lg border border-border bg-card shadow-sm">
+                  <div className="border-b border-border bg-muted/40 px-4 py-3">
+                    <h3 className="text-sm font-semibold text-foreground">Сохранённые периоды</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Каждая строка — отдельный снимок. Нажмите «Открыть», чтобы посмотреть дайджест и список работ.
+                    </p>
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/30 hover:bg-muted/30">
+                        <TableHead className="text-foreground">Период</TableHead>
+                        <TableHead className="text-right text-foreground">Работ в топе</TableHead>
+                        <TableHead className="hidden text-right text-foreground sm:table-cell">Δ к прошлому</TableHead>
+                        <TableHead className="hidden text-right text-foreground md:table-cell">Δ %</TableHead>
+                        <TableHead className="text-right text-foreground print:hidden">Подробнее</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {points.map((p) => (
+                        <TableRow key={p.period} className="hover:bg-muted/20">
+                          <TableCell className="font-mono text-sm font-medium text-foreground">{p.period}</TableCell>
+                          <TableCell className="text-right tabular-nums text-sm text-foreground">{p.work_count}</TableCell>
+                          <TableCell
+                            className={cn(
+                              'hidden text-right text-sm sm:table-cell',
+                              deltaSignedClass(p.delta_vs_prev ?? null),
+                            )}
+                          >
+                            {p.delta_vs_prev == null ? '—' : p.delta_vs_prev > 0 ? `+${p.delta_vs_prev}` : String(p.delta_vs_prev)}
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              'hidden text-right text-sm md:table-cell',
+                              deltaSignedClass(p.pct_change_vs_prev ?? null),
+                            )}
+                          >
+                            {p.pct_change_vs_prev == null ? '—' : `${p.pct_change_vs_prev > 0 ? '+' : ''}${p.pct_change_vs_prev}%`}
+                          </TableCell>
+                          <TableCell className="text-right print:hidden">
+                            <Button
+                              type="button"
+                              variant="default"
+                              size="sm"
+                              className="h-8 min-w-[96px]"
+                              onClick={() => void openSnapshotPeriod(p.period)}
+                            >
+                              Открыть
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </section>
               </>
             )}
           </CardContent>
