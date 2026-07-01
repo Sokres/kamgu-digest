@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     semantic_scholar_enabled: bool = False
     semantic_scholar_max_retries: int = 12
     openalex_mailto: str | None = None
+    # Ключ с https://openalex.org/settings/api — $1/день бесплатно (без ключа $0.10/день).
+    openalex_api_key: str = ""
 
     # CORE REST v3: https://api.core.ac.uk/docs/v3; ключ задаётся в кабинете CORE.
     core_api_key: str = ""

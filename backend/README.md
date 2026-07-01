@@ -187,6 +187,7 @@ gcloud run deploy digest-agent \
 | `LLM_MAX_RETRIES`                     | Число попыток при 429 у LLM (по умолчанию 8)                                                                                                      |
 | `LLM_RETRY_BASE_SECONDS`              | База экспоненциальной паузы между попытками (по умолчанию 4)                                                                                      |
 | `OPENALEX_MAILTO`                     | Email в User-Agent для OpenAlex и общего HTTP-клиента                                                                                             |
+| `OPENALEX_API_KEY`                    | Ключ с [openalex.org/settings/api](https://openalex.org/settings/api): выше дневной лимит API ($1/день бесплатно vs $0.10 без ключа)             |
 | `HTTP_USER_AGENT`                     | Явный User-Agent (если не задан — из `OPENALEX_MAILTO` или дефолт; помогает при **403** у SS)                                                     |
 | `HTTP_TIMEOUT_SECONDS`                | Таймаут HTTP к источникам                                                                                                                         |
 | `HTTP_MAX_RETRIES`                    | Повторы при 429/5xx и сетевых сбоях (по умолчанию 5)                                                                                              |

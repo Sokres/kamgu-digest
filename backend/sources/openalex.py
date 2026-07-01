@@ -194,6 +194,9 @@ async def fetch_openalex(
                 "per-page": str(per_page),
                 "page": str(page),
             }
+            oa_key = (settings.openalex_api_key or "").strip()
+            if oa_key:
+                params["api_key"] = oa_key
             if filter_str:
                 params["filter"] = filter_str
             data = await get_json(
