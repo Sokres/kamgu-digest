@@ -1,4 +1,4 @@
-import { profileDisplayName } from '@/components/ProfileDirectionPicker'
+import { profileDisplayName } from '@/lib/profileDisplay'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { TrendProfileSummary } from '@/types/api'

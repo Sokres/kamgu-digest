@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { profileDisplayName } from '@/components/ProfileDirectionPicker'
+import { profileDisplayName } from '@/lib/profileDisplay'
 import { ScheduleFormFields } from '@/components/digest/ScheduleFormFields'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'

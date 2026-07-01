@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
 
-import { profileDisplayName, profileHasDisplayName } from '@/components/ProfileDirectionPicker'
+import { profileDisplayName, profileHasDisplayName } from '@/lib/profileDisplay'
 import { TrendActivityFeed } from '@/components/trends/TrendActivityFeed'
 import { TrendAnalysisPanel } from '@/components/trends/TrendAnalysisPanel'
 import { TrendConceptEvolutionChart } from '@/components/trends/TrendConceptEvolutionChart'

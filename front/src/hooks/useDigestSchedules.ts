@@ -28,7 +28,7 @@ export function useDigestSchedules(apiBase: string, internalKeyField: string) {
     } finally {
       setLoading(false)
     }
-  }, [apiBase, internalKeyField])
+  }, [apiBase])
 
   useEffect(() => {
     void reload()
