@@ -136,7 +136,7 @@ export function DigestSchedulePanel({
   const latestRun = pickLatestRun(profileSchedules)
   const schedulerOff = digestSchedules && !digestSchedules.scheduler_enabled_in_config
   const primaryFrequency = primarySchedule ? inferScheduleFromCron(primarySchedule.cron_utc).frequency : null
-  const updatesCurrentMonth =
+  const dailySnapshotSchedule =
     primarySchedule != null && (primaryFrequency === 'daily' || primaryFrequency === 'weekly')
 
   useEffect(() => {
@@ -466,12 +466,11 @@ export function DigestSchedulePanel({
             </Alert>
           ) : null}
 
-          {updatesCurrentMonth ? (
-            <Alert className="border-amber-200/80 bg-amber-50/80 dark:border-amber-900/50 dark:bg-amber-950/30">
-              <AlertDescription className="text-pretty text-sm text-amber-950/90 dark:text-amber-50/90">
-                Автозапуск работает, но снимки группируются по месяцу. При запуске каждый день или каждую неделю
-                система обновляет текущий период ({new Date().toISOString().slice(0, 7)}), а новые выводы в трендах
-                появятся после накопления следующего периода.
+          {dailySnapshotSchedule ? (
+            <Alert className="border-border/80 bg-muted/20">
+              <AlertDescription className="text-pretty text-sm">
+                Расписание сохраняет отдельный снимок за каждый день запуска (`YYYY-MM-DD`). Повторный запуск в тот же
+                день обновит снимок этого дня.
               </AlertDescription>
             </Alert>
           ) : null}

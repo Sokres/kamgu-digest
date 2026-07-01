@@ -130,6 +130,8 @@ export interface PdfDocumentUploadResponse {
   warnings?: string[]
 }
 
+export type SnapshotPeriodMode = 'month' | 'day'
+
 export interface MonthlyDigestRequest {
   profile_id: string
   topic_queries: string[]
@@ -143,6 +145,7 @@ export interface MonthlyDigestRequest {
   to_year?: number | null
   exclude_dois?: string[]
   force_period?: string | null
+  period_mode?: SnapshotPeriodMode
   fetch_oa_fulltext?: boolean
   deep_digest?: boolean
 }
@@ -178,8 +181,10 @@ export interface MonthlyStructuredDelta {
 export interface MonthlyDigestMeta extends DigestMeta {
   profile_id?: string
   period?: string
+  period_mode?: SnapshotPeriodMode
   compared_period?: string | null
   snapshot_saved?: boolean
+  snapshot_is_update?: boolean
 }
 
 export interface MonthlyDigestResponse {
@@ -343,6 +348,7 @@ export interface PeriodicDigestScheduleOut {
   from_year?: number | null
   to_year?: number | null
   exclude_dois: string[]
+  period_mode?: SnapshotPeriodMode
   created_at: string
   updated_at: string
   last_run_at?: string | null
@@ -382,6 +388,7 @@ export interface PeriodicDigestScheduleCreate {
   from_year?: number | null
   to_year?: number | null
   exclude_dois?: string[]
+  period_mode?: SnapshotPeriodMode
 }
 
 export interface PeriodicDigestScheduleUpdate {
@@ -399,6 +406,7 @@ export interface PeriodicDigestScheduleUpdate {
   from_year?: number | null
   to_year?: number | null
   exclude_dois?: string[]
+  period_mode?: SnapshotPeriodMode
 }
 
 export interface AuthStatusResponse {

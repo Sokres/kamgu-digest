@@ -467,7 +467,7 @@ export function TrendsPage() {
             <CardDescription>
               {hasComparisons
                 ? 'ИИ-анализ, метрики изменений, графики размера топа и сравнение двух направлений.'
-                : 'Первый период сохранён как базовая линия. Сравнение появится после следующего месячного периода.'}
+                : 'Первый период сохранён как базовая линия. Сравнение появится после следующего снимка (следующий день или другой период).'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -485,8 +485,8 @@ export function TrendsPage() {
                 {!hasComparisons && latestPoint ? (
                   <div className="rounded-lg border border-amber-200/80 bg-amber-50/80 p-4 text-sm text-amber-950/90 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-50/90">
                     Сейчас есть только снимок за <span className="font-mono font-medium">{latestPoint.period}</span>.
-                    Ежедневные запуски внутри этого же месяца обновляют этот период. Чтобы увидеть изменения, нужен
-                    следующий период, например следующий месяц, или ручной запуск с другим `YYYY-MM`.
+                    Следующий автозапуск в другой день (или ручной снимок с другим периодом) добавит вторую точку для
+                    сравнения в трендах.
                   </div>
                 ) : null}
 

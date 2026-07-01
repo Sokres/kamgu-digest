@@ -10,7 +10,7 @@ import {
   validateSharedLimits,
   validateTrendTopK,
 } from '@/lib/digestFormParse'
-import type { DigestMode, DigestRequest, MonthlyDigestRequest } from '@/types/api'
+import type { DigestMode, DigestRequest, MonthlyDigestRequest, SnapshotPeriodMode } from '@/types/api'
 
 export function useDigestFormState() {
   const [topics, setTopics] = useState<string[]>([''])
@@ -31,6 +31,7 @@ export function useDigestFormState() {
 
   const [selectedProfileId, setSelectedProfileId] = useState('')
   const [forcePeriod, setForcePeriod] = useState('')
+  const [periodMode, setPeriodMode] = useState<SnapshotPeriodMode>('day')
   const [internalKeyField, setInternalKeyField] = useState('')
 
   function addTopic() {
@@ -125,6 +126,7 @@ export function useDigestFormState() {
       to_year: parseYear(toYear),
       exclude_dois: parseDois(excludeDois),
       force_period: fp ? fp : null,
+      period_mode: periodMode,
       fetch_oa_fulltext: fetchOaFulltext,
       deep_digest: deepDigest,
     }
@@ -214,6 +216,8 @@ export function useDigestFormState() {
     setSelectedProfileId,
     forcePeriod,
     setForcePeriod,
+    periodMode,
+    setPeriodMode,
     internalKeyField,
     setInternalKeyField,
     presetSnapshot,

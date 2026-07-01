@@ -24,7 +24,7 @@ export function TrendLatestSnapshotPanel({ latest, onOpen }: TrendLatestSnapshot
             <CardTitle>Последний снимок — {latest.period}</CardTitle>
             <CardDescription>
               {isBaseline
-                ? 'Это базовый снимок направления. Сравнение появится после следующего месячного периода.'
+                ? 'Это базовый снимок направления. Сравнение появится после следующего сохранённого периода.'
                 : 'Текст дайджеста и структурированные изменения к прошлому периоду.'}
             </CardDescription>
           </div>

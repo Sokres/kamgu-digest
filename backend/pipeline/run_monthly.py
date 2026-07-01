@@ -19,10 +19,12 @@ from digest.models import (
 )
 from digest.snapshot_store import (
     fetch_latest_snapshot_before,
+    fetch_snapshot_for_period,
     init_snapshot_schema,
     snapshot_connection,
     upsert_snapshot,
 )
+from digest.period_utils import resolve_snapshot_period
 from pipeline.dedupe import dedupe_publications, publication_dedupe_key
 from pipeline.llm import generate_monthly_digest_llm
 from pipeline.monthly_diff import compute_monthly_structured_delta
@@ -34,12 +36,6 @@ from sources.oa_fulltext import enrich_publications_with_oa_fulltext
 logger = logging.getLogger(__name__)
 
 SNAPSHOT_PAYLOAD_VERSION = 1
-
-
-def _utc_period(force: str | None) -> str:
-    if force:
-        return force.strip()
-    return datetime.now(timezone.utc).strftime("%Y-%m")
 
 
 def _ranked_to_snapshot_works(
@@ -78,7 +74,12 @@ def _works_from_payload(payload: dict) -> list[SnapshotWorkRecord]:
 
 async def run_monthly_digest(req: MonthlyDigestRequest, user_id: str) -> MonthlyDigestResponse:
     t0 = time.perf_counter()
-    period = _utc_period(req.force_period)
+    period = resolve_snapshot_period(req.force_period, req.period_mode)
+    snapshot_is_update = False
+    with snapshot_connection(settings.snapshot_database_url) as conn:
+        init_snapshot_schema(conn)
+        existing = fetch_snapshot_for_period(conn, user_id, req.profile_id, period)
+        snapshot_is_update = existing is not None
     digest_req = DigestRequest(
         topic_queries=req.topic_queries,
         digest_mode=req.digest_mode,
@@ -217,8 +218,10 @@ async def run_monthly_digest(req: MonthlyDigestRequest, user_id: str) -> Monthly
         warnings=meta_warnings,
         profile_id=req.profile_id,
         period=period,
+        period_mode=req.period_mode,
         compared_period=compared_period,
         snapshot_saved=False,
+        snapshot_is_update=snapshot_is_update,
         oa_fulltext_fetched=oa_n,
         two_stage_llm=two_stage,
     )
@@ -246,7 +249,11 @@ async def run_monthly_digest(req: MonthlyDigestRequest, user_id: str) -> Monthly
         meta_warnings.append(f"snapshot_save_failed:{e}")
 
     meta = meta.model_copy(
-        update={"snapshot_saved": snapshot_saved, "warnings": meta_warnings},
+        update={
+            "snapshot_saved": snapshot_saved,
+            "snapshot_is_update": snapshot_is_update and snapshot_saved,
+            "warnings": meta_warnings,
+        },
     )
     payload["meta"] = meta.model_dump()
 

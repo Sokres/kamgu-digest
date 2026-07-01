@@ -52,6 +52,24 @@ def test_upsert_and_fetch_previous_period():
             assert older[0] == "2025-01"
 
 
+def test_daily_periods_are_distinct():
+    with tempfile.TemporaryDirectory() as td:
+        db_path = str(Path(td) / "sn.db")
+        url = f"sqlite:///{db_path}"
+        uid = _LEGACY
+        with snapshot_connection(url) as conn:
+            init_snapshot_schema(conn)
+            pid, _ = insert_digest_profile(conn, uid, "Daily", None)
+            upsert_snapshot(conn, uid, pid, "2026-07-01", {"day": 1})
+            upsert_snapshot(conn, uid, pid, "2026-07-02", {"day": 2})
+
+        with snapshot_connection(url) as conn:
+            prev = fetch_latest_snapshot_before(conn, uid, pid, "2026-07-03")
+            assert prev is not None
+            assert prev[0] == "2026-07-02"
+            assert prev[1]["day"] == 2
+
+
 def test_upsert_same_period_replaces():
     with tempfile.TemporaryDirectory() as td:
         db_path = str(Path(td) / "sn.db")

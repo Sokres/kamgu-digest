@@ -52,8 +52,7 @@ export function ScheduleFormFields({
   onTopicsFromSnapshot,
   snapshotTopicsAvailable,
 }: ScheduleFormFieldsProps) {
-  const updatesCurrentMonth = fields.preset === 'daily' || fields.preset === 'weekly'
-  const currentMonth = new Date().toISOString().slice(0, 7)
+  const dailySnapshotMode = fields.preset === 'daily' || fields.preset === 'weekly'
 
   return (
     <div className="space-y-4">
@@ -86,11 +85,11 @@ export function ScheduleFormFields({
         </Select>
       </div>
 
-      {updatesCurrentMonth ? (
-        <Alert className="border-amber-200/80 bg-amber-50/80 dark:border-amber-900/50 dark:bg-amber-950/30">
-          <AlertDescription className="text-pretty text-sm text-amber-950/90 dark:text-amber-50/90">
-            Снимки группируются по месяцу. При такой частоте система обновляет текущий период ({currentMonth}), а новые
-            выводы в «Трендах» появятся после накопления следующего месяца.
+      {dailySnapshotMode ? (
+        <Alert className="border-border/80 bg-muted/20">
+          <AlertDescription className="text-pretty text-sm">
+            При такой частоте каждый запуск сохраняет отдельный дневной снимок (`YYYY-MM-DD`). Повторный запуск в тот
+            же день обновит уже сохранённый снимок этого дня.
           </AlertDescription>
         </Alert>
       ) : null}

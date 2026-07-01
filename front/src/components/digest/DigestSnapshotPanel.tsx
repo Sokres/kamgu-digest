@@ -9,8 +9,16 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { ApiError, createMonthlyDigest, createTrendProfile } from '@/lib/api'
 import type { DigestFormState } from '@/hooks/useDigestFormState'
+import { forcePeriodHint, forcePeriodPlaceholder, periodModeLabel } from '@/lib/periodMode'
 import { getMonthlyInternalKey } from '@/lib/settings'
 import type { MonthlyDigestResponse, TrendProfileSummary } from '@/types/api'
 
@@ -147,8 +155,9 @@ export function DigestSnapshotPanel({
                 {selectedProfile && snapshotCount < 2 ? (
                   <Alert className="border-amber-200/80 bg-amber-50/80 dark:border-amber-900/50 dark:bg-amber-950/30">
                     <AlertDescription className="text-pretty text-sm text-amber-950/90 dark:text-amber-50/90">
-                      Для выводов в «Трендах» нужен минимум второй месячный период. Ежедневный автозапуск в течение
-                      одного месяца обновляет текущий снимок, но не создаёт новую точку сравнения.
+                      Для выводов в «Трендах» нужен минимум второй снимок. При ежедневном режиме каждый новый день
+                      создаёт отдельную точку (`YYYY-MM-DD`); повторный запуск в тот же день обновляет существующий
+                      снимок.
                     </AlertDescription>
                   </Alert>
                 ) : null}
@@ -184,14 +193,32 @@ export function DigestSnapshotPanel({
             </AlertDescription>
           </Alert>
 
-          <div className="space-y-2">
-            <Label htmlFor="snap-force">Период снимка (YYYY-MM, необязательно)</Label>
-            <Input
-              id="snap-force"
-              value={form.forcePeriod}
-              onChange={(e) => form.setForcePeriod(e.target.value)}
-              placeholder="2025-03 — переопределить период"
-            />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="snap-period-mode">Гранулярность снимка</Label>
+              <Select
+                value={form.periodMode}
+                onValueChange={(v) => form.setPeriodMode(v as typeof form.periodMode)}
+              >
+                <SelectTrigger id="snap-period-mode">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="day">По дням — рекомендуется для ежедневного мониторинга</SelectItem>
+                  <SelectItem value="month">По месяцам — одна точка на календарный месяц</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{periodModeLabel(form.periodMode)}</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="snap-force">{forcePeriodHint(form.periodMode)}</Label>
+              <Input
+                id="snap-force"
+                value={form.forcePeriod}
+                onChange={(e) => form.setForcePeriod(e.target.value)}
+                placeholder={forcePeriodPlaceholder(form.periodMode)}
+              />
+            </div>
           </div>
 
           <div className="space-y-2">

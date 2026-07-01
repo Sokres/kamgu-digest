@@ -1,9 +1,10 @@
 import logging
-import re
 import sqlite3
 
 import psycopg
 from fastapi import APIRouter, Header, HTTPException, Query, Response
+
+from digest.period_utils import validate_snapshot_period_label
 
 from app.services.digest_http import effective_llm_api_key
 from digest.config import settings
@@ -53,14 +54,14 @@ def _snapshot_http_exc(exc: Exception) -> HTTPException:
     return HTTPException(status_code=503, detail=_DB_UNAVAILABLE)
 
 
-_PERIOD_RE = re.compile(r"^\d{4}-\d{2}$")
-
-
 def _validate_period(period: str) -> str:
-    p = period.strip()
-    if not _PERIOD_RE.match(p):
-        raise HTTPException(status_code=400, detail="period должен быть в формате YYYY-MM.")
-    return p
+    try:
+        return validate_snapshot_period_label(period)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="period должен быть в формате YYYY-MM или YYYY-MM-DD.",
+        ) from None
 
 
 @router.post("/trends/profiles", response_model=DigestProfileCreated)

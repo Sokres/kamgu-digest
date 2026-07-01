@@ -7,7 +7,8 @@ import {
   validateSharedLimits,
   validateTrendTopK,
 } from '@/lib/digestFormParse'
-import type { PeriodicDigestScheduleCreate, PeriodicDigestScheduleUpdate } from '@/types/api'
+import { inferPeriodModeFromCron } from '@/lib/periodMode'
+import type { PeriodicDigestScheduleCreate, PeriodicDigestScheduleUpdate, SnapshotPeriodMode } from '@/types/api'
 
 type ScheduleParamsOk = {
   ok: true
@@ -24,6 +25,7 @@ type ScheduleParamsOk = {
   exclude_dois: string[]
   fetch_oa_fulltext: boolean
   deep_digest: boolean
+  period_mode: SnapshotPeriodMode
 }
 
 type ScheduleParamsErr = { ok: false; message: string }
@@ -68,6 +70,7 @@ export function resolveScheduleParams(
     exclude_dois: parseDois(form.excludeDois),
     fetch_oa_fulltext: form.fetchOaFulltext,
     deep_digest: form.deepDigest,
+    period_mode: inferPeriodModeFromCron(cron),
   }
 }
 
@@ -92,6 +95,7 @@ export function toScheduleCreateBody(
     exclude_dois: params.exclude_dois,
     fetch_oa_fulltext: params.fetch_oa_fulltext,
     deep_digest: params.deep_digest,
+    period_mode: params.period_mode,
   }
 }
 
@@ -114,5 +118,6 @@ export function toSchedulePatchBody(
     exclude_dois: params.exclude_dois,
     fetch_oa_fulltext: params.fetch_oa_fulltext,
     deep_digest: params.deep_digest,
+    period_mode: params.period_mode,
   }
 }

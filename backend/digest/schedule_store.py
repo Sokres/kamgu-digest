@@ -16,6 +16,7 @@ from digest.models import (
     PeriodicDigestScheduleParams,
     PeriodicDigestScheduleUpdate,
 )
+from digest.period_utils import resolve_schedule_period_mode
 from digest.snapshot_store import _backend_of_conn, _ph
 
 
@@ -30,6 +31,26 @@ def _params_to_json(params: PeriodicDigestScheduleParams) -> str:
 def _row_to_params(raw: str) -> PeriodicDigestScheduleParams:
     data = json.loads(raw) if isinstance(raw, str) else raw
     return PeriodicDigestScheduleParams.model_validate(data)
+
+
+def _params_from_create(body: PeriodicDigestScheduleCreate) -> PeriodicDigestScheduleParams:
+    cron = body.cron_utc.strip()
+    mode = resolve_schedule_period_mode(cron, body.period_mode)
+    return PeriodicDigestScheduleParams(
+        topic_queries=body.topic_queries,
+        digest_mode=body.digest_mode,
+        web_scholarly_sources_only=body.web_scholarly_sources_only,
+        web_search_additional_terms=body.web_search_additional_terms,
+        fetch_oa_fulltext=body.fetch_oa_fulltext,
+        deep_digest=body.deep_digest,
+        max_candidates=body.max_candidates,
+        top_n_for_llm=body.top_n_for_llm,
+        trend_top_k=body.trend_top_k,
+        from_year=body.from_year,
+        to_year=body.to_year,
+        exclude_dois=body.exclude_dois,
+        period_mode=mode,
+    )
 
 
 def _row_to_out(
@@ -68,6 +89,7 @@ def _row_to_out(
         from_year=p.from_year,
         to_year=p.to_year,
         exclude_dois=p.exclude_dois,
+        period_mode=p.period_mode if p.period_mode is not None else resolve_schedule_period_mode(str(cron_utc).strip(), None),
         created_at=created_at,
         updated_at=updated_at,
         last_run_at=last_run_at,
@@ -136,20 +158,7 @@ def insert_schedule(
 ) -> PeriodicDigestScheduleOut:
     sid = str(uuid.uuid4())
     now = _now_iso()
-    params = PeriodicDigestScheduleParams(
-        topic_queries=body.topic_queries,
-        digest_mode=body.digest_mode,
-        web_scholarly_sources_only=body.web_scholarly_sources_only,
-        web_search_additional_terms=body.web_search_additional_terms,
-        fetch_oa_fulltext=body.fetch_oa_fulltext,
-        deep_digest=body.deep_digest,
-        max_candidates=body.max_candidates,
-        top_n_for_llm=body.top_n_for_llm,
-        trend_top_k=body.trend_top_k,
-        from_year=body.from_year,
-        to_year=body.to_year,
-        exclude_dois=body.exclude_dois,
-    )
+    params = _params_from_create(body)
     raw = _params_to_json(params)
     backend = _backend_of_conn(conn)
     ph = _ph(backend)
@@ -188,6 +197,14 @@ def update_schedule(
     cur = get_schedule(conn, schedule_id, user_id=user_id)
     if not cur:
         return None
+    cron = patch.cron_utc.strip() if patch.cron_utc is not None else cur.cron_utc
+    enabled = cur.enabled if patch.enabled is None else patch.enabled
+    if patch.period_mode is not None:
+        period_mode = patch.period_mode
+    elif patch.cron_utc is not None:
+        period_mode = resolve_schedule_period_mode(cron, None)
+    else:
+        period_mode = cur.period_mode
     params = PeriodicDigestScheduleParams(
         topic_queries=patch.topic_queries if patch.topic_queries is not None else cur.topic_queries,
         digest_mode=patch.digest_mode if patch.digest_mode is not None else cur.digest_mode,
@@ -211,9 +228,8 @@ def update_schedule(
         from_year=patch.from_year if patch.from_year is not None else cur.from_year,
         to_year=patch.to_year if patch.to_year is not None else cur.to_year,
         exclude_dois=patch.exclude_dois if patch.exclude_dois is not None else cur.exclude_dois,
+        period_mode=period_mode,
     )
-    cron = patch.cron_utc.strip() if patch.cron_utc is not None else cur.cron_utc
-    enabled = cur.enabled if patch.enabled is None else patch.enabled
     now = _now_iso()
     raw = _params_to_json(params)
     backend = _backend_of_conn(conn)

@@ -14,6 +14,7 @@ _UTC = ZoneInfo("UTC")
 
 from digest.config import settings
 from digest.models import MonthlyDigestRequest
+from digest.period_utils import resolve_schedule_period_mode
 from digest.notify_email import send_schedule_digest_notification
 from digest.schedule_webhook import post_schedule_run_webhook
 from digest.schedule_run_store import insert_schedule_run
@@ -77,6 +78,7 @@ async def _run_scheduled_digest(schedule_id: str) -> None:
             if not enabled:
                 logger.debug("Schedule %s disabled, skip", schedule_id)
                 return
+            period_mode = resolve_schedule_period_mode(_cron, params.period_mode)
             req = MonthlyDigestRequest(
                 profile_id=profile_id,
                 topic_queries=params.topic_queries,
@@ -90,6 +92,7 @@ async def _run_scheduled_digest(schedule_id: str) -> None:
                 to_year=params.to_year,
                 exclude_dois=params.exclude_dois,
                 force_period=None,
+                period_mode=period_mode,
                 fetch_oa_fulltext=params.fetch_oa_fulltext,
                 deep_digest=params.deep_digest,
             )

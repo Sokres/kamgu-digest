@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 DigestMode = Literal["peer_reviewed", "web_snippets"]
+SnapshotPeriodMode = Literal["month", "day"]
 
 
 class ConceptRef(BaseModel):
@@ -329,7 +330,11 @@ class MonthlyDigestRequest(BaseModel):
     exclude_dois: list[str] = Field(default_factory=list)
     force_period: str | None = Field(
         None,
-        description="Переопределить период снимка YYYY-MM (UTC), иначе текущий месяц.",
+        description="Переопределить период: YYYY-MM (month) или YYYY-MM-DD (day), иначе текущий UTC.",
+    )
+    period_mode: SnapshotPeriodMode = Field(
+        "day",
+        description="Гранулярность снимка: day — ключ YYYY-MM-DD (новая точка каждый день); month — YYYY-MM.",
     )
     fetch_oa_fulltext: bool = Field(
         False,
@@ -342,19 +347,23 @@ class MonthlyDigestRequest(BaseModel):
 
     @field_validator("force_period")
     @classmethod
-    def force_period_format(cls, v: str | None) -> str | None:
+    def force_period_strip(cls, v: str | None) -> str | None:
         if v is None:
             return None
         s = v.strip()
-        if len(s) != 7 or s[4] != "-":
-            raise ValueError("force_period must be YYYY-MM")
-        y, m = s.split("-", 1)
-        if not y.isdigit() or not m.isdigit():
-            raise ValueError("force_period must be YYYY-MM")
-        mi = int(m)
-        if mi < 1 or mi > 12:
-            raise ValueError("force_period month must be 01-12")
-        return s
+        return s or None
+
+    @model_validator(mode="after")
+    def validate_force_period_for_mode(self) -> MonthlyDigestRequest:
+        if self.force_period is None:
+            return self
+        from digest.period_utils import normalize_force_period
+
+        try:
+            normalize_force_period(self.force_period, self.period_mode)
+        except ValueError as e:
+            raise ValueError(str(e)) from e
+        return self
 
     @field_validator("from_year", "to_year", mode="before")
     @classmethod
@@ -399,8 +408,10 @@ class MonthlyStructuredDelta(BaseModel):
 class MonthlyDigestMeta(DigestMeta):
     profile_id: str = ""
     period: str = ""
+    period_mode: SnapshotPeriodMode = "day"
     compared_period: str | None = None
     snapshot_saved: bool = False
+    snapshot_is_update: bool = False
 
 
 class MonthlyDigestResponse(BaseModel):
@@ -431,6 +442,10 @@ class PeriodicDigestScheduleParams(BaseModel):
     from_year: int | None = Field(None, description="Минимальный год публикации")
     to_year: int | None = Field(None, description="Максимальный год публикации")
     exclude_dois: list[str] = Field(default_factory=list)
+    period_mode: SnapshotPeriodMode | None = Field(
+        None,
+        description="Гранулярность снимка; если не задано — выводится из cron_utc (daily/weekly → day).",
+    )
 
     @field_validator("from_year", "to_year", mode="before")
     @classmethod
@@ -462,6 +477,10 @@ class PeriodicDigestScheduleCreate(BaseModel):
     from_year: int | None = None
     to_year: int | None = None
     exclude_dois: list[str] = Field(default_factory=list)
+    period_mode: SnapshotPeriodMode | None = Field(
+        None,
+        description="Гранулярность снимка; если не задано — выводится из cron_utc.",
+    )
 
     @field_validator("from_year", "to_year", mode="before")
     @classmethod
@@ -488,6 +507,7 @@ class PeriodicDigestScheduleUpdate(BaseModel):
     from_year: int | None = None
     to_year: int | None = None
     exclude_dois: list[str] | None = None
+    period_mode: SnapshotPeriodMode | None = None
 
     @field_validator("from_year", "to_year", mode="before")
     @classmethod
@@ -517,6 +537,7 @@ class PeriodicDigestScheduleOut(BaseModel):
     from_year: int | None = None
     to_year: int | None = None
     exclude_dois: list[str] = Field(default_factory=list)
+    period_mode: SnapshotPeriodMode = "day"
     created_at: str
     updated_at: str
     last_run_at: str | None = None
