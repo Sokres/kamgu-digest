@@ -20,23 +20,24 @@ Rules:
 - Use ONLY the provided publication fields (title, year, url, doi, abstract; optional is_open_access, oa_url). The field abstract_text_kind tells you what "abstract" contains: metadata_abstract (journal abstract), pdf_excerpt (first pages from a user PDF), or oa_fulltext_excerpt (longer excerpt from an open-access PDF). For excerpts, focus on visible content only; do not infer unseen parts of the paper.
 - Do not invent methods, results, numbers, or citations not supported by the provided text.
 - When abstract is present, summary_ru and summary_en must paraphrase it (goal, approach if visible, main findings or limitations). Do not merely repeat the title.
-- When abstract is empty, write 2-4 conservative sentences from the title and note limited data.
+- When abstract is empty, write 4-6 conservative sentences from the title and note limited data.
+- Prefer depth and explanatory prose over telegraphic notes. The reader is a lab director who needs a substantive narrative, not a brief skim.
 - Respond with a single JSON object, no markdown fences.
 JSON shape:
 {
-  "overview_ru": "4-6 sentences synthesizing the corpus",
-  "overview_en": "4-6 sentences in English",
-  "digest_ru": "Markdown: sections Overview, Theme clusters (if clear), Highlights per paper — for each paper a short paragraph plus bullet list",
-  "digest_en": "Same structure in English",
+  "overview_ru": "8-12 sentences synthesizing themes, methods, gaps, and relevance to the user's topics",
+  "overview_en": "8-12 sentences in English",
+  "digest_ru": "Detailed Markdown report (~1200-2500 words): ## Обзор (2-3 paragraphs), ## Тематические блоки (for each cluster: introductory paragraph + bullet list), ## Ключевые публикации (for EACH paper: ### Title, 2-3 paragraph synthesis grounded in abstract, 5-8 bullet takeaways, short relevance note)",
+  "digest_en": "Same structure and depth in English",
   "article_cards": [
     {
       "title": "must match an input title exactly",
       "url": "from input or empty",
       "year": null,
-      "summary_ru": "4-7 sentences grounded in abstract; if abstract empty, 2-4 sentences from title with uncertainty note",
+      "summary_ru": "8-12 sentences grounded in abstract; if abstract empty, 4-6 sentences from title with uncertainty note",
       "summary_en": "same in English",
-      "bullets": ["3-5 short points grounded in the text"],
-      "why_relevant": "one sentence tied to the user's topics"
+      "bullets": ["5-8 substantive points grounded in the text"],
+      "why_relevant": "2-3 sentences tied to the user's topics and lab interests"
     }
   ]
 }
@@ -48,15 +49,16 @@ Rules:
 - Use ONLY the provided publication fields. Do not invent statistics, methods, or results not supported by the text.
 - When abstract/snippet is present, summary must cover goal, approach (if visible), main point, and limitations.
 - If the text is short or empty, say so briefly and stay conservative.
+- Write substantive summaries: the reader needs depth, not telegraphic notes.
 - Respond with a single JSON object, no markdown fences.
 JSON shape:
 {
   "title_match": "must equal the input title exactly",
-  "summary_ru": "4-7 sentences: goal, approach if visible, main point or limitation",
+  "summary_ru": "8-12 sentences: goal, approach if visible, main findings, limitations, and practical takeaway",
   "summary_en": "same in English",
-  "bullets_ru": ["3-5 short points grounded in the text"],
-  "bullets_en": ["3-5 short points in English"],
-  "why_relevant": "one sentence tying the paper to the user topics"
+  "bullets_ru": ["5-8 substantive points grounded in the text"],
+  "bullets_en": ["5-8 substantive points in English"],
+  "why_relevant": "2-3 sentences tying the paper to the user topics and lab interests"
 }"""
 
 SYSTEM_REDUCE = """You synthesize a research digest from per-paper summaries only (the full text was already summarized per paper).
@@ -64,22 +66,23 @@ Rules:
 - Use ONLY paper_summaries and topics. Do not invent statistics, DOIs, or claims not present in the summaries.
 - article_cards: "title" must match each paper_summaries[].title exactly, in the same order as given.
 - Copy summary_ru and summary_en from paper_summaries into each article_card (you may lightly edit for flow).
+- Prefer depth over brevity: digest text should read as a full analytical report for lab leadership.
 - Respond with a single JSON object, no markdown fences.
 Same JSON shape as the standard digest:
 {
-  "overview_ru": "4-6 sentences",
-  "overview_en": "4-6 sentences",
-  "digest_ru": "Markdown: sections Overview, Theme clusters (if clear), Highlights per paper — paragraph plus bullets per paper",
-  "digest_en": "Same structure in English",
+  "overview_ru": "8-12 sentences",
+  "overview_en": "8-12 sentences",
+  "digest_ru": "Detailed Markdown (~1200-2500 words): ## Обзор, ## Тематические блоки, ## Ключевые публикации — for each paper 2-3 paragraphs plus 5-8 bullets",
+  "digest_en": "Same structure and depth in English",
   "article_cards": [
     {
       "title": "must match an input title exactly",
       "url": "from paper_summaries or empty",
       "year": null,
-      "summary_ru": "from paper_summaries, 4-7 sentences",
-      "summary_en": "from paper_summaries, 4-7 sentences",
-      "bullets": ["3-5 short points from summaries"],
-      "why_relevant": "one sentence tied to the user's topics"
+      "summary_ru": "from paper_summaries, 8-12 sentences",
+      "summary_en": "from paper_summaries, 8-12 sentences",
+      "bullets": ["5-8 substantive points from summaries"],
+      "why_relevant": "2-3 sentences tied to the user's topics"
     }
   ]
 }
@@ -91,23 +94,24 @@ Rules:
 - Use ONLY facts and phrasing supported by the provided snippets. Do not invent statistics, paper titles, DOIs, or journal names not present in snippets.
 - summary_ru and summary_en must expand on the snippet content; if snippet is very short, state that limitation.
 - If information is missing or uncertain, say so briefly.
+- Prefer depth over brevity: write a substantive web overview, not a skim.
 - article_cards: "title" must match a snippet title exactly; "url" from that snippet.
 - Respond with a single JSON object, no markdown fences.
 Same JSON shape as the standard digest:
 {
-  "overview_ru": "4-6 sentences; mention web-snippet limitation",
-  "overview_en": "4-6 sentences",
-  "digest_ru": "Markdown: start with a short disclaimer that this is web search snippets, then themes and per-source highlights with paragraph plus bullets per source",
-  "digest_en": "Same in English",
+  "overview_ru": "8-12 sentences; mention web-snippet limitation and main themes",
+  "overview_en": "8-12 sentences",
+  "digest_ru": "Detailed Markdown (~800-1800 words): disclaimer that this is web search snippets, then thematic blocks and per-source highlights — for each source 2 paragraphs plus 5-8 bullets",
+  "digest_en": "Same structure and depth in English",
   "article_cards": [
     {
       "title": "must match an input snippet title exactly",
       "url": "from snippet",
       "year": null,
-      "summary_ru": "3-6 sentences from snippet only",
+      "summary_ru": "6-10 sentences from snippet only",
       "summary_en": "same in English",
-      "bullets": ["3-5 short points from snippet only"],
-      "why_relevant": "one sentence"
+      "bullets": ["5-8 substantive points from snippet only"],
+      "why_relevant": "2-3 sentences"
     }
   ]
 }
@@ -122,25 +126,26 @@ Rules:
 - In digest_ru and digest_en, use Markdown with these sections in order:
   1) **Disclaimer** (one short paragraph): metrics come from snapshot comparisons of this corpus; citation data lag; "popularity" means citation change / rank within this sample, not definitive global impact.
   2) **Observed metric shifts** — only quantitative/tabular facts from structured_delta (top citation gains, entered/left top-K, concept share deltas). If a list is empty, say so briefly.
-  3) **Current highlights** — thematic clusters and paper summaries from abstracts; paragraph plus bullets per paper.
-  4) **Risks and discussion hypotheses** — clearly label as hypotheses and questions for expert discussion, NOT as facts or firm predictions about the field going "wrong".
-- When abstract is present, article_card summary must paraphrase it. When abstract is empty, 2-4 sentences from title with uncertainty note.
+  3) **Current highlights** — thematic clusters and paper summaries from abstracts; for each paper 2-3 paragraphs plus 5-8 bullets.
+  4) **Risks and discussion hypotheses** — 2-3 paragraphs of hypotheses and questions for expert discussion, NOT as facts or firm predictions about the field going "wrong".
+- When abstract is present, article_card summary must paraphrase it in depth. When abstract is empty, 4-6 sentences from title with uncertainty note.
+- Prefer depth over brevity: this is a monthly report for lab leadership.
 - Respond with a single JSON object, no markdown fences.
 Same JSON shape as the standard digest:
 {
-  "overview_ru": "4-6 sentences",
-  "overview_en": "4-6 sentences",
-  "digest_ru": "Markdown sections as above",
-  "digest_en": "Same structure in English",
+  "overview_ru": "8-12 sentences on period dynamics and corpus themes",
+  "overview_en": "8-12 sentences",
+  "digest_ru": "Detailed Markdown (~1200-2500 words) with all sections above; each section 2-4 paragraphs where applicable",
+  "digest_en": "Same structure and depth in English",
   "article_cards": [
     {
       "title": "must match an input title exactly",
       "url": "from input or empty",
       "year": null,
-      "summary_ru": "4-7 sentences grounded in abstract",
+      "summary_ru": "8-12 sentences grounded in abstract",
       "summary_en": "same in English",
-      "bullets": ["3-5 short points"],
-      "why_relevant": "one sentence tied to the user's topics"
+      "bullets": ["5-8 substantive points"],
+      "why_relevant": "2-3 sentences tied to the user's topics"
     }
   ]
 }
@@ -151,19 +156,21 @@ You receive period_highlights (monthly snapshot comparisons) and concept_evoluti
 Rules:
 - Use ONLY facts present in period_highlights and concept_evolution. Do not invent citation counts, ranks, or concept shares.
 - If fewer than 2 non-baseline comparison periods exist, state that longitudinal comparison is limited.
+- Prefer depth over brevity: write a substantive analytical report for lab leadership (~1500-3500 words in analysis_ru/analysis_en).
+- Reference concrete data: period names, paper titles, concept names, numeric shifts from the input.
 - In analysis_ru and analysis_en, use Markdown with these sections in order:
-  1) **Disclaimer** (one short paragraph): metrics come from saved snapshot comparisons of this corpus; citation data lag; sample is the lab's fixed top-K, not the whole field.
-  2) **Overall dynamics** — trend of work_count, churn (entered/left top-K), stability vs volatility across periods.
-  3) **Citation and ranking shifts** — recurring leaders, largest citation gains, papers entering/leaving top-K (only from provided data).
-  4) **Concept evolution** — which OpenAlex concepts gained or lost share across the series.
-  5) **Discussion hypotheses** — clearly label as hypotheses for expert discussion, NOT firm predictions.
+  1) **Disclaimer** (one paragraph): metrics come from saved snapshot comparisons of this corpus; citation data lag; sample is the lab's fixed top-K, not the whole field.
+  2) **Overall dynamics** — 3-5 paragraphs on trend of work_count, churn (entered/left top-K), stability vs volatility across periods; cite specific periods and numbers.
+  3) **Citation and ranking shifts** — 3-5 paragraphs on recurring leaders, largest citation gains, papers entering/leaving top-K (only from provided data); name papers and periods.
+  4) **Concept evolution** — 2-4 paragraphs on which OpenAlex concepts gained or lost share across the series; cite concept names and share changes.
+  5) **Discussion hypotheses** — 2-4 paragraphs of hypotheses for expert discussion, clearly labeled, NOT firm predictions.
 - Respond with a single JSON object, no markdown fences.
 JSON shape:
 {
-  "overview_ru": "2-4 sentences",
-  "overview_en": "2-4 sentences",
-  "analysis_ru": "Markdown sections as above",
-  "analysis_en": "Same structure in English"
+  "overview_ru": "8-12 sentences summarizing the direction's trajectory and key takeaways",
+  "overview_en": "8-12 sentences",
+  "analysis_ru": "Detailed Markdown with all sections above; each major section multiple paragraphs with concrete references to input data",
+  "analysis_en": "Same structure and depth in English"
 }"""
 
 SYSTEM_REDUCE_MONTHLY = """You are a research assistant writing a MONTHLY trend digest for a research lab.
@@ -174,25 +181,26 @@ Rules:
 - In digest_ru and digest_en, use Markdown with these sections in order:
   1) **Disclaimer** (one short paragraph): metrics come from snapshot comparisons of this corpus; citation data lag; "popularity" means citation change / rank within this sample, not definitive global impact.
   2) **Observed metric shifts** — only quantitative/tabular facts from structured_delta (top citation gains, entered/left top-K, concept share deltas). If a list is empty, say so briefly.
-  3) **Current highlights** — thematic clusters and paper points from paper_summaries; paragraph plus bullets per paper.
-  4) **Risks and discussion hypotheses** — clearly label as hypotheses and questions for expert discussion, NOT as facts or firm predictions about the field going "wrong".
+  3) **Current highlights** — thematic clusters and paper points from paper_summaries; for each paper 2-3 paragraphs plus 5-8 bullets.
+  4) **Risks and discussion hypotheses** — 2-3 paragraphs of hypotheses and questions for expert discussion, NOT as facts or firm predictions about the field going "wrong".
 - article_cards: one per paper_summaries entry, same order; "title" must match paper_summaries[].title exactly; copy summary_ru/summary_en from paper_summaries; bullets grounded in paper_summaries.
+- Prefer depth over brevity: this is a monthly report for lab leadership.
 - Respond with a single JSON object, no markdown fences.
 Same JSON shape as the standard digest:
 {
-  "overview_ru": "4-6 sentences",
-  "overview_en": "4-6 sentences",
-  "digest_ru": "Markdown sections as above",
-  "digest_en": "Same structure in English",
+  "overview_ru": "8-12 sentences on period dynamics and corpus themes",
+  "overview_en": "8-12 sentences",
+  "digest_ru": "Detailed Markdown (~1200-2500 words) with all sections above",
+  "digest_en": "Same structure and depth in English",
   "article_cards": [
     {
       "title": "must match paper_summaries title exactly",
       "url": "from paper_summaries or empty",
       "year": null,
-      "summary_ru": "from paper_summaries, 4-7 sentences",
-      "summary_en": "from paper_summaries, 4-7 sentences",
-      "bullets": ["3-5 short points from summaries"],
-      "why_relevant": "one sentence tied to the user's topics"
+      "summary_ru": "from paper_summaries, 8-12 sentences",
+      "summary_en": "from paper_summaries, 8-12 sentences",
+      "bullets": ["5-8 substantive points from summaries"],
+      "why_relevant": "2-3 sentences tied to the user's topics"
     }
   ]
 }"""
@@ -389,7 +397,7 @@ def _ensure_card_summaries(
     result: DigestLLMResult,
     publications: list[PublicationInput],
     *,
-    max_excerpt: int = 600,
+    max_excerpt: int = 1200,
 ) -> DigestLLMResult:
     by_title = {p.title: p for p in publications}
     new_cards: list[ArticleCard] = []
@@ -525,6 +533,7 @@ async def _chat_json_to_dict(system: str, user_payload: dict[str, Any]) -> dict[
             {"role": "user", "content": user_text},
         ],
         "temperature": 0.35,
+        "max_tokens": settings.llm_max_completion_tokens,
     }
     if rt.json_format:
         create_kw["response_format"] = {"type": "json_object"}

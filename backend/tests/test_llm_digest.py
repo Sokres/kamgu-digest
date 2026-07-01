@@ -96,7 +96,7 @@ def test_ensure_card_summaries_uses_abstract_fallback() -> None:
 
 
 def test_finalize_digest_result_merges_then_falls_back() -> None:
-    long_abstract = "A" * 800
+    long_abstract = "A" * 1500
     result = DigestLLMResult(
         article_cards=[ArticleCard(title="Paper C", bullets=[])],
     )
@@ -112,5 +112,5 @@ def test_finalize_digest_result_merges_then_falls_back() -> None:
     final = _finalize_digest_result(result, pubs, paper_summaries)
     card = final.article_cards[0]
     assert card.bullets == ["b1"]
-    assert len(card.summary_en) <= 601
+    assert len(card.summary_en) <= 1201
     assert card.summary_en.endswith("…")

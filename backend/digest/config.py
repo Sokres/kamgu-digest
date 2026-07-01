@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     llm_digest_prompt_budget_chars: int = 900_000
     # Параллельные map-вызовы LLM при двухэтапном дайджесте.
     llm_digest_map_concurrency: int = 3
+    # Лимит токенов ответа LLM (дайджест, месячный дайджест, анализ направления).
+    llm_max_completion_tokens: int = 16_384
     # Unpaywall (email обязателен для API): по умолчанию берётся OPENALEX_MAILTO, иначе пусто = OA-полнотекст недоступен.
     unpaywall_email: str = ""
     # Каталог кэша извлечённого текста по DOI (json рядом с сырыми pdf при желании).

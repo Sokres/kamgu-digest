@@ -235,7 +235,7 @@ function firstInsight(text: string): string {
   const trimmed = text.trim()
   if (!trimmed) return ''
   const paragraphs = trimmed.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
-  return (paragraphs[0] ?? trimmed).replace(/^#+\s*/, '').slice(0, 520)
+  return (paragraphs[0] ?? trimmed).replace(/^#+\s*/, '').slice(0, 900)
 }
 
 function DigestMainPanel({ data }: { data: DigestResponse | MonthlyDigestResponse }) {
@@ -443,7 +443,7 @@ function PublicationsTable({ rows }: { rows: PublicationInput[] }) {
 
 function DigestText({ text }: { text: string }) {
   return (
-    <ScrollArea className="h-[min(480px,55vh)] w-full rounded-md border">
+    <ScrollArea className="h-[min(640px,70vh)] w-full rounded-md border">
       <div className="digest-prose mx-auto max-w-prose p-4 md:p-6">
         <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{text || '—'}</pre>
       </div>

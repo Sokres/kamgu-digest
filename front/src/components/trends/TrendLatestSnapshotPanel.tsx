@@ -39,7 +39,7 @@ export function TrendLatestSnapshotPanel({ latest, onOpen }: TrendLatestSnapshot
         {hasDigest ? (
           <div className="space-y-2">
             <h3 className="text-sm font-medium">Дайджест за период</h3>
-            <ScrollArea className="h-[min(280px,40vh)] w-full rounded-md border">
+            <ScrollArea className="h-[min(420px,55vh)] w-full rounded-md border">
               <div className="digest-prose mx-auto max-w-prose p-4">
                 <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
                   {latest.digest_ru}

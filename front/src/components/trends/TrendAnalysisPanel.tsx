@@ -1,18 +1,24 @@
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Skeleton } from '@/components/ui/skeleton'
-import type { TrendAnalysisResponse } from '@/types/api'
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { TrendAnalysisResponse } from "@/types/api";
 
 type TrendAnalysisPanelProps = {
-  loading: boolean
-  error: string | null
-  analysis: TrendAnalysisResponse | null
-  snapshotCount: number
-  onRefresh: () => void
-  refreshing: boolean
-}
+  loading: boolean;
+  error: string | null;
+  analysis: TrendAnalysisResponse | null;
+  snapshotCount: number;
+  onRefresh: () => void;
+  refreshing: boolean;
+};
 
 export function TrendAnalysisPanel({
   loading,
@@ -22,8 +28,8 @@ export function TrendAnalysisPanel({
   onRefresh,
   refreshing,
 }: TrendAnalysisPanelProps) {
-  const canAnalyze = snapshotCount >= 2
-  const hasText = Boolean(analysis?.analysis_ru?.trim())
+  const canAnalyze = snapshotCount >= 2;
+  const hasText = Boolean(analysis?.analysis_ru?.trim());
 
   return (
     <Card className="border-primary/20 bg-linear-to-br from-primary/5 to-transparent">
@@ -32,8 +38,8 @@ export function TrendAnalysisPanel({
           <div>
             <CardTitle>ИИ-анализ направления</CardTitle>
             <CardDescription className="text-pretty">
-              Сводная интерпретация динамики по всем сохранённым периодам. Текст формирует LLM-агент на основе
-              структурированных метрик.
+              Сводная интерпретация динамики по всем сохранённым периодам. Текст
+              формирует LLM-агент на основе структурированных метрик.
             </CardDescription>
           </div>
           {canAnalyze ? (
@@ -44,7 +50,7 @@ export function TrendAnalysisPanel({
               disabled={loading || refreshing}
               onClick={onRefresh}
             >
-              {refreshing ? 'Анализ…' : 'Обновить анализ'}
+              {refreshing ? "Анализ…" : "Обновить анализ"}
             </Button>
           ) : null}
         </div>
@@ -64,28 +70,30 @@ export function TrendAnalysisPanel({
           </div>
         ) : !canAnalyze ? (
           <p className="text-sm text-muted-foreground text-pretty">
-            Накопите минимум 2 периода, чтобы получить сравнительный анализ. Сейчас периодов:{' '}
-            {snapshotCount}.
+            Накопите минимум 2 периода, чтобы получить сравнительный анализ.
+            Сейчас периодов: {snapshotCount}.
           </p>
         ) : !hasText ? (
           <p className="text-sm text-muted-foreground">
-            Анализ ещё не сформирован. Нажмите «Обновить анализ» или дождитесь автоматического запуска.
+            Анализ ещё не сформирован. Нажмите «Обновить анализ» или дождитесь
+            автоматического запуска.
           </p>
         ) : (
           <>
             {analysis?.cached ? (
               <p className="text-xs text-muted-foreground">
-                Кэш актуален для периода {analysis.analyzed_through_period ?? '—'}.
+                Кэш актуален для периода{" "}
+                {analysis.analyzed_through_period ?? "—"}.
               </p>
             ) : analysis?.analyzed_through_period ? (
               <p className="text-xs text-muted-foreground">
                 Сформировано для периода {analysis.analyzed_through_period}.
               </p>
             ) : null}
-            <ScrollArea className="h-[min(360px,50vh)] w-full rounded-md border">
+            <ScrollArea className="h-[min(560px,65vh)] w-full rounded-md border">
               <div className="digest-prose mx-auto max-w-prose p-4 md:p-6">
                 <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
-                  {analysis?.analysis_ru || '—'}
+                  {analysis?.analysis_ru || "—"}
                 </pre>
               </div>
             </ScrollArea>
@@ -93,5 +101,5 @@ export function TrendAnalysisPanel({
         )}
       </CardContent>
     </Card>
-  )
+  );
 }

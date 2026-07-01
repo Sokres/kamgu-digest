@@ -102,7 +102,7 @@ export function TrendSnapshotSheet({
             {!loading && hasDigest ? (
               <section className="space-y-3 rounded-lg border border-border bg-card p-4 shadow-sm">
                 <h3 className="text-base font-semibold text-foreground">Дайджест за период</h3>
-                <ScrollArea className="h-[min(360px,50vh)] w-full rounded-md border border-border bg-background">
+                <ScrollArea className="h-[min(560px,65vh)] w-full rounded-md border border-border bg-background">
                   <div className="digest-prose mx-auto max-w-prose p-4">
                     <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
                       {detail?.digest_ru}
