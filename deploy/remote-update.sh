@@ -36,6 +36,8 @@ if [ -f .env ]; then
   export VITE_API_BASE_URL="$(_read_dotenv_key VITE_API_BASE_URL .env 2>/dev/null || true)"
   export VITE_MONTHLY_INTERNAL_KEY="$(_read_dotenv_key VITE_MONTHLY_INTERNAL_KEY .env 2>/dev/null || true)"
   export FRONT_STATIC_ROOT="$(_read_dotenv_key FRONT_STATIC_ROOT .env 2>/dev/null || true)"
+  export DOCKERHUB_USERNAME="$(_read_dotenv_key DOCKERHUB_USERNAME .env 2>/dev/null || true)"
+  export DOCKERHUB_TOKEN="$(_read_dotenv_key DOCKERHUB_TOKEN .env 2>/dev/null || true)"
 else
   echo "remote-update: предупреждение: нет файла $ROOT/.env — задайте VITE_API_BASE_URL и др." >&2
 fi
@@ -72,5 +74,25 @@ elif [ "${DEPLOY_BUILD_FRONT:-1}" != "0" ]; then
   echo "remote-update: npm не найден — фронт НЕ собран. Установите Node.js 20+ (см. deploy/README.md) или задайте DEPLOY_BUILD_FRONT=0." >&2
 fi
 
-docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+  echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin docker.io >/dev/null
+fi
+
+_compose_up_with_retry() {
+  local attempt=1 max=4 wait=45
+  while [ "$attempt" -le "$max" ]; do
+    if docker compose -f docker-compose.prod.yml --env-file .env up -d --build; then
+      return 0
+    fi
+    if [ "$attempt" -lt "$max" ]; then
+      echo "remote-update: docker compose не удался (попытка ${attempt}/${max}), повтор через ${wait}s…" >&2
+      sleep "$wait"
+      wait=$((wait * 2))
+    fi
+    attempt=$((attempt + 1))
+  done
+  return 1
+}
+
+_compose_up_with_retry
 docker compose -f docker-compose.prod.yml ps

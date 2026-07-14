@@ -232,6 +232,16 @@ ls front/dist/assets/ | head -10
 
 В режиме **инкогнито** или с отключённым кэшем (DevTools) откройте страницу ещё раз.
 
+### Ошибка `429 Too Many Requests` при сборке Docker
+
+Docker Hub ограничивает число pull с одного IP (на VPS часто общий адрес). В логе: `failed to resolve source metadata for docker.io/library/python:...: 429`.
+
+**Что сделать:**
+
+1. **Повторить деплой** через 15–30 минут или вручную на сервере: `cd /opt/kamgu && bash deploy/remote-update.sh` (скрипт делает до 4 попыток с паузой).
+2. **Обновить репозиторий** — базовые образы в проекте берутся из зеркала AWS Public ECR (`public.ecr.aws/docker/library/...`), лимит Docker Hub на них не распространяется.
+3. **Опционально:** в корневом `.env` задайте `DOCKERHUB_USERNAME` и `DOCKERHUB_TOKEN` (Access Token в [hub.docker.com](https://hub.docker.com/settings/security)) — `remote-update.sh` выполнит `docker login` перед сборкой.
+
 ### Ошибка `.env: line N: …: command not found` при деплое
 
 Корневой `.env` **нельзя** подключать целиком через `source` в bash, если в значениях есть **пробелы без кавычек**. Скрипт `remote-update.sh` читает только нужные ключи (`VITE_*`, `FRONT_STATIC_ROOT`, `DEPLOY_BUILD_FRONT`). Строки с произвольным текстом оформляйте как **`KEY="значение с пробелами"`**. Для Docker Compose значения с пробелами тоже лучше в кавычках.
