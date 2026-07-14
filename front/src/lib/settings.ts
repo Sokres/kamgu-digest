@@ -88,7 +88,8 @@ export const LLM_PRESET_OPTIONS: LlmPresetOption[] = [
     label: 'DeepSeek — deepseek-chat',
     baseUrl: 'https://api.deepseek.com/v1',
     model: 'deepseek-chat',
-    pricing: 'paid',
+    pricing: 'free_quota',
+    description: 'Ключ на platform.deepseek.com; новым аккаунтам — бесплатные токены, дальше pay-as-you-go.',
   },
   {
     id: 'groq_llama',

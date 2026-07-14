@@ -18,7 +18,7 @@ export function useDigestFormState() {
   const [peerReviewedOnly, setPeerReviewedOnly] = useState(true)
   const [openalexConceptId, setOpenalexConceptId] = useState('')
   const [openalexSourceIds, setOpenalexSourceIds] = useState('')
-  const [maxCandidates, setMaxCandidates] = useState('100')
+  const [maxCandidates, setMaxCandidates] = useState('30')
   const [topN, setTopN] = useState('20')
   const [trendTopK, setTrendTopK] = useState('20')
   const [fromYear, setFromYear] = useState('')

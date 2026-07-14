@@ -238,6 +238,7 @@ export function DigestSharedParams({
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="space-y-2">
             <Label htmlFor={`${idPrefix}-max-c`}>Макс. найденных статей (10–200)</Label>
+            <p className="text-xs text-muted-foreground">На слабом VPS рекомендуется 30; 100 — 5–10+ мин и риск обрыва.</p>
             <Input
               id={`${idPrefix}-max-c`}
               type="number"

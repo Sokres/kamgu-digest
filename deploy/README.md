@@ -401,3 +401,78 @@ localStorage.setItem('kamgu_llm_preset_id', 'server');
 | `401 User not found` от OpenRouter | Неверный/старый ключ в **работающем** контейнере или ключ из браузера (`client_headers`) |
 | `503` «Не найдено публикаций» | Пустые источники (OpenAlex/SS), не LLM |
 | Ключ в `backend/.env` новый, ошибка остаётся | Не выполнен `force-recreate api` или в браузере сохранён свой ключ |
+| `net::ERR_CONNECTION_RESET` на `POST /digests` (локально OK) | Таймаут Caddy/Nginx на длинный запрос или OOM-kill контейнера `api` — см. ниже |
+
+### `POST /digests`: `net::ERR_CONNECTION_RESET` на проде, локально работает
+
+Это **не CORS** и не JSON-ошибка API (401/503): соединение обрывается до ответа. Частые причины:
+
+1. **Таймаут reverse proxy** — `POST /digests` идёт 1–10+ минут (OpenAlex, Crossref, LLM). Дефолт Nginx `proxy_read_timeout` — **60 с**; Caddy без `transport http { read_timeout … }` тоже может оборвать долгий ответ.
+2. **Контейнер `api` убит OOM** — на маленьком VPS Postgres + тяжёлый дайджest (`max_candidates=100`) → процесс uvicorn падает, клиент видит reset.
+
+**Диагностика на сервере** (SSH, каталог клона `/opt/kamgu`):
+
+```bash
+# 1. API жив?
+curl -s --max-time 5 http://127.0.0.1:8080/health
+
+# 2. Дайджest напрямую в контейнер (минуя Caddy) — подставьте Bearer из браузера:
+curl -sS -X POST http://127.0.0.1:8080/digests \
+  -H 'Authorization: Bearer ВАШ_ТОКЕН' \
+  -H 'Content-Type: application/json' \
+  --data '{"topic_queries":["синтез карбида кремния"],"digest_mode":"peer_reviewed","max_candidates":20,"top_n_for_llm":10}' \
+  --max-time 600 -w '\nhttp:%{http_code}\n'
+
+# 3. Логи и OOM во время запроса (в другом терминале):
+docker compose -f docker-compose.prod.yml logs -f --tail=80 api
+dmesg -T | tail -20 | grep -i oom || true
+```
+
+| Результат | Что делать |
+|-----------|------------|
+| `127.0.0.1:8080` **OK**, снаружи **reset** | Увеличить таймауты в Caddy/Nginx — примеры: [Caddyfile.example](Caddyfile.example), [nginx.example.conf](nginx.example.conf). Caddy: `sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy` |
+| **reset и на localhost:8080** | Смотреть `docker compose … logs api`; при OOM — больше RAM или уменьшить `max_candidates` / `top_n_for_llm`; проверить ключ LLM: `force-recreate api` (п. 8) |
+| Быстрый `503` с JSON | Ключ LLM / OpenRouter — не reset, см. таблицу выше |
+
+Пример блока **Caddy** для `api.24msg.ru` (глобальный блок + site):
+
+```
+{
+	servers {
+		timeouts {
+			read_body 2m
+			write 20m
+			idle 20m
+		}
+	}
+}
+
+api.24msg.ru {
+  reverse_proxy 127.0.0.1:8080 {
+    flush_interval -1
+    transport http {
+      dial_timeout 30s
+      read_timeout 20m
+      write_timeout 20m
+      keepalive off
+    }
+  }
+}
+```
+
+После правок: `sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl restart caddy` (не только `reload`).
+
+**Если localhost OK, а браузер — reset:** во время ошибки с сайта выполните `docker compose -f docker-compose.prod.yml logs api --tail=30 | grep POST`. Если в логах уже есть `"POST /digests HTTP/1.1" 200 OK`, а браузер оборвался — проблема **между Caddy и клиентом** (неполный Caddyfile или таймаут балансировщика хостинга). Если записи POST нет — запрос не доходит до API.
+
+**Тест с теми же параметрами, что в браузере** (`max_candidates=100`):
+
+```bash
+curl -sS -X POST https://api.24msg.ru/digests \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{"topic_queries":["синтез карбида кремния"],"digest_mode":"peer_reviewed","max_candidates":100,"top_n_for_llm":20,"peer_reviewed_only":true,"fetch_oa_fulltext":false,"deep_digest":false}' \
+  --max-time 900 -w '\nhttp:%{http_code} time:%{time_total}s\n' \
+  -o /tmp/digest-100.json
+```
+
+Если обрыв около **60–120 с** — смотрите панель VPS (DDoS-прокси / балансировщик) и полный `sudo cat /etc/caddy/Caddyfile`.

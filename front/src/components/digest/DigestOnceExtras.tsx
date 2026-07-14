@@ -90,7 +90,11 @@ export function DigestOnceExtras({ apiBase, form, onResult, loading, setLoading 
       const res = await createDigest(apiBase, built.body)
       onResult(res, built.body, null)
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err)
+      let msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err)
+      if (err instanceof ApiError && err.status === 0) {
+        msg =
+          'Соединение с API оборвалось до ответа. На сервере дайджest часто считается 3–7 минут — уменьшите «Макс. найденных статей» до 30, не закрывайте вкладку и повторите.'
+      }
       setError(msg)
       onResult(null, null, msg)
     } finally {
@@ -106,7 +110,7 @@ export function DigestOnceExtras({ apiBase, form, onResult, loading, setLoading 
             <div className="space-y-1">
               <h2 className="text-lg font-semibold tracking-tight">Быстрый дайджест</h2>
               <p className="text-sm text-muted-foreground">
-                Ориентир 5–15 минут. Можно оставить страницу открытой и вернуться к результату.
+                На сервере обычно 3–7 минут при 30 статьях; при 100 — дольше. Не закрывайте вкладку до результата.
               </p>
             </div>
             <Button type="submit" disabled={loading} size="lg" className="min-w-[220px]">
