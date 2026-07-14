@@ -6,7 +6,7 @@ import re
 import time
 from typing import Any
 
-from openai import AsyncOpenAI, RateLimitError
+from openai import APIConnectionError, AsyncOpenAI, RateLimitError
 from pydantic import ValidationError
 
 from digest.config import settings
@@ -20,24 +20,24 @@ Rules:
 - Use ONLY the provided publication fields (title, year, url, doi, abstract; optional is_open_access, oa_url). The field abstract_text_kind tells you what "abstract" contains: metadata_abstract (journal abstract), pdf_excerpt (first pages from a user PDF), or oa_fulltext_excerpt (longer excerpt from an open-access PDF). For excerpts, focus on visible content only; do not infer unseen parts of the paper.
 - Do not invent methods, results, numbers, or citations not supported by the provided text.
 - When abstract is present, summary_ru and summary_en must paraphrase it (goal, approach if visible, main findings or limitations). Do not merely repeat the title.
-- When abstract is empty, write 4-6 conservative sentences from the title and note limited data.
-- Prefer depth and explanatory prose over telegraphic notes. The reader is a lab director who needs a substantive narrative, not a brief skim.
+- When abstract is empty, write 2-4 conservative sentences from the title and note limited data.
+- Keep the whole JSON compact enough to finish within ~12000 completion tokens. Prefer clear prose over length.
 - Respond with a single JSON object, no markdown fences.
 JSON shape:
 {
-  "overview_ru": "8-12 sentences synthesizing themes, methods, gaps, and relevance to the user's topics",
-  "overview_en": "8-12 sentences in English",
-  "digest_ru": "Detailed Markdown report (~1200-2500 words): ## Обзор (2-3 paragraphs), ## Тематические блоки (for each cluster: introductory paragraph + bullet list), ## Ключевые публикации (for EACH paper: ### Title, 2-3 paragraph synthesis grounded in abstract, 5-8 bullet takeaways, short relevance note)",
-  "digest_en": "Same structure and depth in English",
+  "overview_ru": "4-6 sentences synthesizing themes, methods, gaps, and relevance to the user's topics",
+  "overview_en": "4-6 sentences in English",
+  "digest_ru": "Markdown (~400-700 words): ## Обзор (1-2 paragraphs), ## Тематические блоки (short cluster intros + bullets), ## Ключевые публикации (for EACH paper: ### Title, 1 short paragraph + 3-5 bullets)",
+  "digest_en": "Same structure, similarly compact, in English",
   "article_cards": [
     {
       "title": "must match an input title exactly",
       "url": "from input or empty",
       "year": null,
-      "summary_ru": "8-12 sentences grounded in abstract; if abstract empty, 4-6 sentences from title with uncertainty note",
+      "summary_ru": "3-5 sentences grounded in abstract; if abstract empty, 2-3 sentences from title with uncertainty note",
       "summary_en": "same in English",
-      "bullets": ["5-8 substantive points grounded in the text"],
-      "why_relevant": "2-3 sentences tied to the user's topics and lab interests"
+      "bullets": ["3-5 substantive points grounded in the text"],
+      "why_relevant": "1-2 sentences tied to the user's topics and lab interests"
     }
   ]
 }
@@ -49,44 +49,44 @@ Rules:
 - Use ONLY the provided publication fields. Do not invent statistics, methods, or results not supported by the text.
 - When abstract/snippet is present, summary must cover goal, approach (if visible), main point, and limitations.
 - If the text is short or empty, say so briefly and stay conservative.
-- Write substantive summaries: the reader needs depth, not telegraphic notes.
+- Keep JSON compact; finish fully within the token limit.
 - Respond with a single JSON object, no markdown fences.
 JSON shape:
 {
   "title_match": "must equal the input title exactly",
-  "summary_ru": "8-12 sentences: goal, approach if visible, main findings, limitations, and practical takeaway",
+  "summary_ru": "4-6 sentences: goal, approach if visible, main findings, limitations, and practical takeaway",
   "summary_en": "same in English",
-  "bullets_ru": ["5-8 substantive points grounded in the text"],
-  "bullets_en": ["5-8 substantive points in English"],
-  "why_relevant": "2-3 sentences tying the paper to the user topics and lab interests"
+  "bullets_ru": ["3-5 substantive points grounded in the text"],
+  "bullets_en": ["3-5 substantive points in English"],
+  "why_relevant": "1-2 sentences tying the paper to the user topics and lab interests"
 }"""
 
 SYSTEM_REDUCE = """You synthesize a research digest from per-paper summaries only (the full text was already summarized per paper).
 Rules:
 - Use ONLY paper_summaries and topics. Do not invent statistics, DOIs, or claims not present in the summaries.
-- article_cards: "title" must match each paper_summaries[].title exactly, in the same order as given.
-- Copy summary_ru and summary_en from paper_summaries into each article_card (you may lightly edit for flow).
-- Prefer depth over brevity: digest text should read as a full analytical report for lab leadership.
+- Do NOT rewrite per-paper summaries into article_cards text fields: leave summary_ru, summary_en, bullets, and why_relevant as empty strings/arrays. Server fills them from paper_summaries.
+- article_cards: only title/url/year stubs; "title" must match each paper_summaries[].title exactly, same order.
+- Keep digest compact (~400-700 words per language). Theme-level synthesis only — do not re-summarize every paper in depth.
 - Respond with a single JSON object, no markdown fences.
-Same JSON shape as the standard digest:
+JSON shape:
 {
-  "overview_ru": "8-12 sentences",
-  "overview_en": "8-12 sentences",
-  "digest_ru": "Detailed Markdown (~1200-2500 words): ## Обзор, ## Тематические блоки, ## Ключевые публикации — for each paper 2-3 paragraphs plus 5-8 bullets",
-  "digest_en": "Same structure and depth in English",
+  "overview_ru": "4-6 sentences",
+  "overview_en": "4-6 sentences",
+  "digest_ru": "Markdown (~400-700 words): ## Обзор, ## Тематические блоки, ## Ключевые публикации (title + 1 short relevance line each)",
+  "digest_en": "Same structure, similarly compact, in English",
   "article_cards": [
     {
       "title": "must match an input title exactly",
       "url": "from paper_summaries or empty",
       "year": null,
-      "summary_ru": "from paper_summaries, 8-12 sentences",
-      "summary_en": "from paper_summaries, 8-12 sentences",
-      "bullets": ["5-8 substantive points from summaries"],
-      "why_relevant": "2-3 sentences tied to the user's topics"
+      "summary_ru": "",
+      "summary_en": "",
+      "bullets": [],
+      "why_relevant": ""
     }
   ]
 }
-Include one article_card per paper_summaries entry, in the same order as given."""
+Include one article_card stub per paper_summaries entry, in the same order as given."""
 
 SYSTEM_WEB = """You summarize WEB SEARCH SNIPPETS for a research lab (not peer-reviewed literature).
 Rules:
@@ -94,24 +94,24 @@ Rules:
 - Use ONLY facts and phrasing supported by the provided snippets. Do not invent statistics, paper titles, DOIs, or journal names not present in snippets.
 - summary_ru and summary_en must expand on the snippet content; if snippet is very short, state that limitation.
 - If information is missing or uncertain, say so briefly.
-- Prefer depth over brevity: write a substantive web overview, not a skim.
+- Keep the whole JSON compact enough to finish within ~12000 completion tokens.
 - article_cards: "title" must match a snippet title exactly; "url" from that snippet.
 - Respond with a single JSON object, no markdown fences.
 Same JSON shape as the standard digest:
 {
-  "overview_ru": "8-12 sentences; mention web-snippet limitation and main themes",
-  "overview_en": "8-12 sentences",
-  "digest_ru": "Detailed Markdown (~800-1800 words): disclaimer that this is web search snippets, then thematic blocks and per-source highlights — for each source 2 paragraphs plus 5-8 bullets",
-  "digest_en": "Same structure and depth in English",
+  "overview_ru": "4-6 sentences; mention web-snippet limitation and main themes",
+  "overview_en": "4-6 sentences",
+  "digest_ru": "Markdown (~300-600 words): disclaimer that this is web search snippets, then thematic blocks and short per-source highlights",
+  "digest_en": "Same structure, similarly compact, in English",
   "article_cards": [
     {
       "title": "must match an input snippet title exactly",
       "url": "from snippet",
       "year": null,
-      "summary_ru": "6-10 sentences from snippet only",
+      "summary_ru": "3-5 sentences from snippet only",
       "summary_en": "same in English",
-      "bullets": ["5-8 substantive points from snippet only"],
-      "why_relevant": "2-3 sentences"
+      "bullets": ["3-5 substantive points from snippet only"],
+      "why_relevant": "1-2 sentences"
     }
   ]
 }
@@ -126,26 +126,26 @@ Rules:
 - In digest_ru and digest_en, use Markdown with these sections in order:
   1) **Disclaimer** (one short paragraph): metrics come from snapshot comparisons of this corpus; citation data lag; "popularity" means citation change / rank within this sample, not definitive global impact.
   2) **Observed metric shifts** — only quantitative/tabular facts from structured_delta (top citation gains, entered/left top-K, concept share deltas). If a list is empty, say so briefly.
-  3) **Current highlights** — thematic clusters and paper summaries from abstracts; for each paper 2-3 paragraphs plus 5-8 bullets.
-  4) **Risks and discussion hypotheses** — 2-3 paragraphs of hypotheses and questions for expert discussion, NOT as facts or firm predictions about the field going "wrong".
-- When abstract is present, article_card summary must paraphrase it in depth. When abstract is empty, 4-6 sentences from title with uncertainty note.
-- Prefer depth over brevity: this is a monthly report for lab leadership.
+  3) **Current highlights** — thematic clusters; for each paper 1 short paragraph plus 3-5 bullets.
+  4) **Risks and discussion hypotheses** — 1-2 paragraphs of hypotheses for expert discussion, NOT firm predictions.
+- When abstract is present, article_card summary must paraphrase it. When abstract is empty, 2-3 sentences from title with uncertainty note.
+- Keep the whole JSON compact enough to finish within ~12000 completion tokens.
 - Respond with a single JSON object, no markdown fences.
 Same JSON shape as the standard digest:
 {
-  "overview_ru": "8-12 sentences on period dynamics and corpus themes",
-  "overview_en": "8-12 sentences",
-  "digest_ru": "Detailed Markdown (~1200-2500 words) with all sections above; each section 2-4 paragraphs where applicable",
-  "digest_en": "Same structure and depth in English",
+  "overview_ru": "4-6 sentences on period dynamics and corpus themes",
+  "overview_en": "4-6 sentences",
+  "digest_ru": "Markdown (~400-700 words) with all sections above",
+  "digest_en": "Same structure, similarly compact, in English",
   "article_cards": [
     {
       "title": "must match an input title exactly",
       "url": "from input or empty",
       "year": null,
-      "summary_ru": "8-12 sentences grounded in abstract",
+      "summary_ru": "3-5 sentences grounded in abstract",
       "summary_en": "same in English",
-      "bullets": ["5-8 substantive points"],
-      "why_relevant": "2-3 sentences tied to the user's topics"
+      "bullets": ["3-5 substantive points"],
+      "why_relevant": "1-2 sentences tied to the user's topics"
     }
   ]
 }
@@ -181,26 +181,27 @@ Rules:
 - In digest_ru and digest_en, use Markdown with these sections in order:
   1) **Disclaimer** (one short paragraph): metrics come from snapshot comparisons of this corpus; citation data lag; "popularity" means citation change / rank within this sample, not definitive global impact.
   2) **Observed metric shifts** — only quantitative/tabular facts from structured_delta (top citation gains, entered/left top-K, concept share deltas). If a list is empty, say so briefly.
-  3) **Current highlights** — thematic clusters and paper points from paper_summaries; for each paper 2-3 paragraphs plus 5-8 bullets.
-  4) **Risks and discussion hypotheses** — 2-3 paragraphs of hypotheses and questions for expert discussion, NOT as facts or firm predictions about the field going "wrong".
-- article_cards: one per paper_summaries entry, same order; "title" must match paper_summaries[].title exactly; copy summary_ru/summary_en from paper_summaries; bullets grounded in paper_summaries.
-- Prefer depth over brevity: this is a monthly report for lab leadership.
+  3) **Current highlights** — thematic clusters from paper_summaries; title + 1 short line each, do not re-expand full summaries.
+  4) **Risks and discussion hypotheses** — 1-2 paragraphs of hypotheses for expert discussion, NOT firm predictions.
+- Do NOT rewrite per-paper summaries into article_cards text fields: leave summary_ru, summary_en, bullets, and why_relevant empty. Server fills them from paper_summaries.
+- article_cards: only title/url/year stubs; "title" must match each paper_summaries[].title exactly, same order.
+- Keep digest compact (~400-700 words per language).
 - Respond with a single JSON object, no markdown fences.
 Same JSON shape as the standard digest:
 {
-  "overview_ru": "8-12 sentences on period dynamics and corpus themes",
-  "overview_en": "8-12 sentences",
-  "digest_ru": "Detailed Markdown (~1200-2500 words) with all sections above",
-  "digest_en": "Same structure and depth in English",
+  "overview_ru": "4-6 sentences on period dynamics and corpus themes",
+  "overview_en": "4-6 sentences",
+  "digest_ru": "Markdown (~400-700 words) with all sections above",
+  "digest_en": "Same structure, similarly compact, in English",
   "article_cards": [
     {
       "title": "must match paper_summaries title exactly",
       "url": "from paper_summaries or empty",
       "year": null,
-      "summary_ru": "from paper_summaries, 8-12 sentences",
-      "summary_en": "from paper_summaries, 8-12 sentences",
-      "bullets": ["5-8 substantive points from summaries"],
-      "why_relevant": "2-3 sentences tied to the user's topics"
+      "summary_ru": "",
+      "summary_en": "",
+      "bullets": [],
+      "why_relevant": ""
     }
   ]
 }"""
@@ -413,12 +414,40 @@ def _ensure_card_summaries(
     return result.model_copy(update={"article_cards": new_cards})
 
 
+def _cards_from_paper_summaries(paper_summaries: list[dict[str, Any]]) -> list[ArticleCard]:
+    cards: list[ArticleCard] = []
+    for s in paper_summaries:
+        title = str(s.get("title") or "").strip()
+        if not title:
+            continue
+        bullets_ru = s.get("bullets_ru")
+        bullets = [str(x) for x in bullets_ru[:8]] if isinstance(bullets_ru, list) else []
+        year_raw = s.get("year")
+        year = year_raw if isinstance(year_raw, int) else None
+        cards.append(
+            ArticleCard(
+                title=title,
+                url=str(s.get("url") or ""),
+                year=year,
+                summary_ru=str(s.get("summary_ru") or ""),
+                summary_en=str(s.get("summary_en") or ""),
+                bullets=bullets,
+                why_relevant=str(s.get("why_relevant") or ""),
+            )
+        )
+    return cards
+
+
 def _finalize_digest_result(
     result: DigestLLMResult,
     publications: list[PublicationInput],
     paper_summaries: list[dict[str, Any]] | None = None,
 ) -> DigestLLMResult:
     if paper_summaries:
+        if not result.article_cards:
+            result = result.model_copy(
+                update={"article_cards": _cards_from_paper_summaries(paper_summaries)}
+            )
         result = _merge_map_summaries_into_cards(result, paper_summaries)
     return _ensure_card_summaries(result, publications)
 
@@ -468,7 +497,11 @@ async def _generate_monthly_digest_llm_two_stage(
 
 def _make_openai_async_client() -> tuple[AsyncOpenAI, str]:
     rt = resolve_effective_llm_runtime()
-    client_kw: dict[str, Any] = {"api_key": rt.api_key, "max_retries": 0}
+    client_kw: dict[str, Any] = {
+        "api_key": rt.api_key,
+        "max_retries": 0,
+        "timeout": float(settings.llm_timeout_seconds),
+    }
     if rt.base_url:
         client_kw["base_url"] = rt.base_url
     log_base = rt.base_url or "https://api.openai.com/v1 (SDK default)"
@@ -570,6 +603,22 @@ async def _chat_json_to_dict(system: str, user_payload: dict[str, Any]) -> dict[
                 e,
             )
             await asyncio.sleep(wait)
+        except APIConnectionError as e:
+            if attempt >= settings.llm_max_retries - 1:
+                logger.error(
+                    "LLM connection error: attempts exhausted (%s)",
+                    settings.llm_max_retries,
+                )
+                raise
+            wait = _llm_backoff_seconds(attempt)
+            logger.warning(
+                "LLM connection error (attempt %s/%s), sleep %.1fs — %s",
+                attempt + 1,
+                settings.llm_max_retries,
+                wait,
+                e,
+            )
+            await asyncio.sleep(wait)
     if completion is None:
         raise RuntimeError(
             "LLM: chat.completions.create did not return after "
@@ -635,12 +684,19 @@ async def generate_digest_llm(
     force_two_stage: bool = False,
 ) -> tuple[DigestLLMResult, bool]:
     est = _estimate_digest_payload_chars(publications, topic_queries)
-    use_two_stage = force_two_stage or est > settings.llm_digest_prompt_budget_chars
+    n_pubs = len(publications)
+    use_two_stage = (
+        force_two_stage
+        or est > settings.llm_digest_prompt_budget_chars
+        or n_pubs >= settings.llm_digest_two_stage_min_pubs
+    )
     if use_two_stage:
         logger.info(
-            "digest LLM: two-stage map-reduce (est_chars=%s budget=%s force=%s)",
+            "digest LLM: two-stage map-reduce (est_chars=%s budget=%s n_pubs=%s min_pubs=%s force=%s)",
             est,
             settings.llm_digest_prompt_budget_chars,
+            n_pubs,
+            settings.llm_digest_two_stage_min_pubs,
             force_two_stage,
         )
         return await _generate_digest_llm_two_stage(publications, topic_queries), True
@@ -705,12 +761,19 @@ async def generate_monthly_digest_llm(
     force_two_stage: bool = False,
 ) -> tuple[DigestLLMResult, bool]:
     est = _estimate_monthly_payload_chars(publications, topic_queries, structured_delta)
-    use_two_stage = force_two_stage or est > settings.llm_digest_prompt_budget_chars
+    n_pubs = len(publications)
+    use_two_stage = (
+        force_two_stage
+        or est > settings.llm_digest_prompt_budget_chars
+        or n_pubs >= settings.llm_digest_two_stage_min_pubs
+    )
     if use_two_stage:
         logger.info(
-            "monthly digest LLM: two-stage map-reduce (est_chars=%s budget=%s force=%s)",
+            "monthly digest LLM: two-stage map-reduce (est_chars=%s budget=%s n_pubs=%s min_pubs=%s force=%s)",
             est,
             settings.llm_digest_prompt_budget_chars,
+            n_pubs,
+            settings.llm_digest_two_stage_min_pubs,
             force_two_stage,
         )
         return await _generate_monthly_digest_llm_two_stage(

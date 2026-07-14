@@ -24,10 +24,14 @@ class Settings(BaseSettings):
     llm_max_abstract_chars_longtext: int = 24_000
     # Если оценка размера JSON user payload превышает порог — map-reduce (отдельный вызов на статью + сводка).
     llm_digest_prompt_budget_chars: int = 900_000
+    # При ≥ N публикациях всегда map-reduce: иначе bilingual digest + cards не вмещаются в max completion tokens.
+    llm_digest_two_stage_min_pubs: int = 8
     # Параллельные map-вызовы LLM при двухэтапном дайджесте.
     llm_digest_map_concurrency: int = 3
     # Лимит токенов ответа LLM (дайджест, месячный дайджест, анализ направления).
     llm_max_completion_tokens: int = 16_384
+    # Таймаут HTTP к LLM (длинные completion на DeepSeek/OpenRouter).
+    llm_timeout_seconds: float = 600.0
     # Unpaywall (email обязателен для API): по умолчанию берётся OPENALEX_MAILTO, иначе пусто = OA-полнотекст недоступен.
     unpaywall_email: str = ""
     # Каталог кэша извлечённого текста по DOI (json рядом с сырыми pdf при желании).

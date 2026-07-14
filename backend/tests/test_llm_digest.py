@@ -114,3 +114,89 @@ def test_finalize_digest_result_merges_then_falls_back() -> None:
     assert card.bullets == ["b1"]
     assert len(card.summary_en) <= 1201
     assert card.summary_en.endswith("…")
+
+
+def test_finalize_builds_cards_from_paper_summaries_when_empty() -> None:
+    result = DigestLLMResult(overview_ru="обзор", article_cards=[])
+    paper_summaries = [
+        {
+            "title": "Paper D",
+            "url": "https://example.com/d",
+            "year": 2020,
+            "summary_ru": "Кратко по-русски.",
+            "summary_en": "Short in English.",
+            "bullets_ru": ["a", "b"],
+            "why_relevant": "Релевантно.",
+        }
+    ]
+    pubs = [PublicationInput(title="Paper D", url="https://example.com/d", year=2020)]
+    final = _finalize_digest_result(result, pubs, paper_summaries)
+    assert len(final.article_cards) == 1
+    card = final.article_cards[0]
+    assert card.title == "Paper D"
+    assert card.summary_ru == "Кратко по-русски."
+    assert card.summary_en == "Short in English."
+    assert card.bullets == ["a", "b"]
+    assert card.why_relevant == "Релевантно."
+
+
+def test_generate_digest_llm_two_stage_when_pubs_ge_min(monkeypatch) -> None:
+    import asyncio
+
+    from pipeline import llm as llm_mod
+
+    monkeypatch.setattr(settings, "llm_digest_two_stage_min_pubs", 8)
+    monkeypatch.setattr(settings, "llm_digest_prompt_budget_chars", 900_000)
+
+    called: dict[str, bool] = {"two_stage": False, "single": False}
+
+    async def fake_two_stage(publications, topic_queries):
+        called["two_stage"] = True
+        return DigestLLMResult(overview_ru="ok")
+
+    async def fake_chat(_system, _payload):
+        called["single"] = True
+        return {"overview_ru": "single"}
+
+    monkeypatch.setattr(llm_mod, "_generate_digest_llm_two_stage", fake_two_stage)
+    monkeypatch.setattr(llm_mod, "_chat_json_to_dict", fake_chat)
+
+    pubs = [PublicationInput(title=f"P{i}", abstract="a") for i in range(20)]
+    result, used_two_stage = asyncio.run(llm_mod.generate_digest_llm(pubs, ["topic"]))
+    assert used_two_stage is True
+    assert called["two_stage"] is True
+    assert called["single"] is False
+    assert result.overview_ru == "ok"
+
+
+def test_generate_digest_llm_single_when_few_pubs(monkeypatch) -> None:
+    import asyncio
+
+    from pipeline import llm as llm_mod
+
+    monkeypatch.setattr(settings, "llm_digest_two_stage_min_pubs", 8)
+    monkeypatch.setattr(settings, "llm_digest_prompt_budget_chars", 900_000)
+
+    called: dict[str, bool] = {"two_stage": False}
+
+    async def fake_two_stage(publications, topic_queries):
+        called["two_stage"] = True
+        return DigestLLMResult(overview_ru="two")
+
+    async def fake_chat(_system, _payload):
+        return {
+            "overview_ru": "single",
+            "overview_en": "",
+            "digest_ru": "",
+            "digest_en": "",
+            "article_cards": [],
+        }
+
+    monkeypatch.setattr(llm_mod, "_generate_digest_llm_two_stage", fake_two_stage)
+    monkeypatch.setattr(llm_mod, "_chat_json_to_dict", fake_chat)
+
+    pubs = [PublicationInput(title=f"P{i}", abstract="a") for i in range(3)]
+    result, used_two_stage = asyncio.run(llm_mod.generate_digest_llm(pubs, ["topic"]))
+    assert used_two_stage is False
+    assert called["two_stage"] is False
+    assert result.overview_ru == "single"
