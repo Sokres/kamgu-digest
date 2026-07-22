@@ -5,151 +5,108 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     openai_api_key: str = ""
-    # Альтернатива: ключ только OpenRouter (удобнее не смешивать с OpenAI в одной переменной).
     openrouter_api_key: str = ""
     openai_base_url: str | None = None
     openai_model: str = "gpt-4o-mini"
-    # Для OpenRouter :free моделей часто нет json_mode — выставьте false.
+    # OpenRouter :free часто без json_mode — тогда false.
     openai_response_format_json: bool = True
 
-    # Опционально для OpenRouter (ранги на openrouter.ai)
     openrouter_http_referer: str | None = None
     openrouter_app_title: str = "KamGU Research Digest"
-    # Ретраи при 429 у OpenRouter / провайдера (:free модели часто «upstream rate limited»).
     llm_max_retries: int = 8
     llm_retry_base_seconds: float = 4.0
-    # Сколько символов поля abstract уходит в промпт LLM на одну публикацию (источники с метаданными).
     llm_max_abstract_chars_per_pub: int = 12_000
-    # Загруженные пользователем PDF и извлечённый OA-полнотекст: больший лимит.
     llm_max_abstract_chars_longtext: int = 24_000
-    # Если оценка размера JSON user payload превышает порог — map-reduce (отдельный вызов на статью + сводка).
     llm_digest_prompt_budget_chars: int = 900_000
-    # При ≥ N публикациях всегда map-reduce: иначе bilingual digest + cards не вмещаются в max completion tokens.
     llm_digest_two_stage_min_pubs: int = 8
-    # Параллельные map-вызовы LLM при двухэтапном дайджесте.
     llm_digest_map_concurrency: int = 3
-    # Лимит токенов ответа LLM (дайджест, месячный дайджест, анализ направления).
     llm_max_completion_tokens: int = 16_384
-    # Таймаут HTTP к LLM (длинные completion на DeepSeek/OpenRouter).
     llm_timeout_seconds: float = 600.0
-    # Unpaywall (email обязателен для API): по умолчанию берётся OPENALEX_MAILTO, иначе пусто = OA-полнотекст недоступен.
     unpaywall_email: str = ""
-    # Каталог кэша извлечённого текста по DOI (json рядом с сырыми pdf при желании).
     oa_fulltext_cache_dir: str = "data/oa_fulltext_cache"
-    # Максимум статей за один дайджест, для которых тянем OA PDF (остальные только abstract из метаданных).
     oa_fulltext_max_per_digest: int = 8
-    # Максимальный размер скачиваемого OA PDF (байты).
     oa_fulltext_max_download_bytes: int = 25 * 1024 * 1024
 
-    # Semantic Scholar / часть CDN режут запросы без нормального User-Agent → 403.
-    # Пусто = см. openalex_mailto или строка по умолчанию.
+    # Пусто → openalex_mailto или дефолтный UA (иначе SS/CDN часто 403).
     http_user_agent: str = ""
     http_timeout_seconds: float = 30.0
     http_max_retries: int = 5
-    # Секунды между запросами к разным источникам (снижает 429 у Semantic Scholar).
     source_stagger_seconds: float = 1.5
-    # Пауза перед 2-й и следующими страницами поиска Semantic Scholar (пагинация режется по лимитам).
     semantic_scholar_page_delay_seconds: float = 5.0
-    # Опционально: https://www.semanticscholar.org/product/api — выше лимиты, меньше 429.
     semantic_scholar_api_key: str | None = None
     semantic_scholar_enabled: bool = False
     semantic_scholar_max_retries: int = 12
     openalex_mailto: str | None = None
-    # Ключ с https://openalex.org/settings/api — $1/день бесплатно (без ключа $0.10/день).
     openalex_api_key: str = ""
 
-    # CORE REST v3: https://api.core.ac.uk/docs/v3; ключ задаётся в кабинете CORE.
     core_api_key: str = ""
     core_enabled: bool = False
-    # Квота batch /search: ~1 запрос / 10 с — пауза между страницами и перед первым запросом после других источников.
     core_request_delay_seconds: float = 10.5
     core_max_pages: int = 5
 
-    # Crossref REST: обогащение по DOI (GET https://api.crossref.org/works/...)
     crossref_enrichment_enabled: bool = True
-    # Уникальных DOI за один дайджест (остальные без запроса к Crossref).
     crossref_max_unique_dois: int = 80
 
-    # Веб-обзор по сниппетам (режим digest_mode=web_snippets): https://tavily.com
     tavily_api_key: str | None = None
     web_search_max_results: int = 15
-    # Список доменов через запятую для Tavily include_domains (пусто = встроенный научный список в sources/tavily.py)
     tavily_include_domains: str = ""
-    # Необязательный префикс к запросу (например «peer-reviewed»), чтобы сместить выдачу к статьям
     tavily_query_prefix: str = ""
 
     log_level: str = "INFO"
 
-    # Ежемесячные снимки: PostgreSQL (прод/docker-compose) или SQLite локально — см. SNAPSHOT_DATABASE_URL в README.
-    # По умолчанию SQLite, чтобы uvicorn без Docker и без .env не отдавал 503 на /auth/login из‑за недоступного Postgres.
+    # SQLite по умолчанию: без Docker/Postgres /auth/login не падает с 503.
     snapshot_database_url: str = "sqlite:///./snapshots.db"
-    # Встроенный APScheduler: POST /digests/schedules. Включайте только при одном воркере uvicorn.
+    # Только при одном воркере uvicorn.
     digest_periodic_scheduler_enabled: bool = False
-    # Если задан — POST /digests/monthly и /digests/periodic требуют заголовок X-Internal-Key с тем же значением.
     monthly_digest_cron_secret: str = ""
 
-    # Лимит POST /digests на один IP за скользящее окно 60 с (0 = отключено).
     digest_rate_limit_per_minute: int = 0
-    # POST /saved-digests: максимальный размер JSON payload (байты).
     saved_digest_max_payload_bytes: int = 4 * 1024 * 1024
-    # Длина названия сохранённого дайджеста.
     saved_digest_title_max_length: int = 200
 
-    # Загрузка PDF для дайджеста: каталог на диске (uuid.pdf + uuid.json)
     documents_storage_dir: str = "data/documents"
     pdf_max_upload_bytes: int = 20 * 1024 * 1024
     pdf_max_pages_extract: int = 80
     pdf_max_abstract_chars: int = 50_000
 
-    # Браузерный фронт (Vite и т.п.): список origin через запятую.
-    # Пустая строка в .env раньше отключала CORS и ломала fetch с localhost:5173 — в cors_origins_list подставляются dev-origins.
-    # «*» — любой origin (без credentials).
+    # Пустая строка в .env → подставляются dev-origins (иначе ломается localhost:5173).
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
-    # JWT-авторизация пользователей (снимки/тренды/расписания/PDF в разрезе user_id). AUTH_ENABLED=false — режим как раньше.
     auth_enabled: bool = False
     auth_jwt_secret: str = ""
     auth_jwt_expire_minutes: int = 60 * 24 * 7
-    # Если задано — срок жизни access JWT в минутах (короткий). Иначе используется auth_jwt_expire_minutes.
     auth_access_token_expire_minutes: int | None = None
     auth_refresh_token_expire_days: int = 30
     auth_registration_enabled: bool = True
-    # Старые строки без владельца мигрируют с этим user_id; новые записи при выключенной авторизации используют то же значение.
     auth_legacy_user_id: str = "__legacy__"
 
-    # Опционально: SMTP-уведомления после запуска расписания (DIGEST_PERIODIC_SCHEDULER_ENABLED).
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_use_tls: bool = True
     digest_notify_from_email: str = ""
-    """Кому отправлять (через запятую). Пусто — письма не отправляются."""
     digest_notify_to_email: str = ""
 
-    """POST JSON на этот URL после завершения запуска по расписанию (успех или ошибка). Пусто — не вызывать."""
     digest_schedule_webhook_url: str = ""
-    """Необязательный общий секрет в заголовке X-Webhook-Secret для вашего приёмника."""
     digest_schedule_webhook_secret: str = ""
 
     def llm_api_key_resolved(self) -> str:
         a = (self.openai_api_key or "").strip()
         b = (self.openrouter_api_key or "").strip()
         base = (self.openai_base_url or "").strip().lower()
-        # При URL OpenRouter не подставлять ключ OpenAI раньше ключа OpenRouter — иначе 401 при смешанном .env.
+        # При OpenRouter не брать openai-ключ раньше openrouter — иначе 401 при смешанном .env.
         if "openrouter" in base:
             return b or a
         return a or b
 
     def unpaywall_email_resolved(self) -> str:
-        """Email для Unpaywall API (обязателен ими); иначе пусто — OA PDF не запрашиваем."""
         e = (self.unpaywall_email or "").strip()
         if e:
             return e
         return (self.openalex_mailto or "").strip()
 
     def llm_api_key_source_label(self) -> str:
-        """Какая переменная окружения дала ключ (для логов)."""
         a = (self.openai_api_key or "").strip()
         b = (self.openrouter_api_key or "").strip()
         base = (self.openai_base_url or "").strip().lower()

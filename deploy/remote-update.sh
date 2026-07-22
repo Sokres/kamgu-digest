@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-# Запуск на сервере из каталога с клоном репозитория (например /opt/kamgu).
-# git pull → (опционально) сборка фронта → docker compose для API.
-#
-# Важно: при `bash deploy/remote-update.sh` bash читает файл в память один раз.
-# `git pull` обновляет скрипт на диске, но дальше выполняется СТАРАЯ версия — поэтому
-# после pull делаем exec, чтобы заново запустить актуальный скрипт с диска.
+# После git pull — exec актуальной версии с диска (bash иначе держит старый скрипт в памяти).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SELF="$ROOT/deploy/remote-update.sh"
@@ -16,7 +11,7 @@ if [ -z "${REMOTE_UPDATE_REEXEC:-}" ]; then
   exec bash "$SELF"
 fi
 
-# Одна строка KEY=value из .env без `source` (иначе bash ломается на пробелах/кавычках в произвольных полях).
+# Без source: пробелы/кавычки в .env ломают bash.
 _read_dotenv_key() {
   local key="$1" file="$2" line val
   line=$(grep -E "^${key}=" "$file" 2>/dev/null | tail -n1) || return 1
@@ -29,7 +24,6 @@ _read_dotenv_key() {
   printf '%s' "$val"
 }
 
-# Переменные для Vite подхватываем только так — полный `source .env` недопустим (напр. описания с пробелами).
 if [ -f .env ]; then
   _dbf=$(_read_dotenv_key DEPLOY_BUILD_FRONT .env 2>/dev/null || true)
   [ -n "$_dbf" ] && export DEPLOY_BUILD_FRONT="$_dbf"
@@ -42,15 +36,13 @@ else
   echo "remote-update: предупреждение: нет файла $ROOT/.env — задайте VITE_API_BASE_URL и др." >&2
 fi
 
-# Сборка Vite: нужны Node/npm на сервере и VITE_API_BASE_URL в корневом .env (см. deploy/README.md).
-# Отключить: DEPLOY_BUILD_FRONT=0 в .env или в окружении.
 echo "remote-update: шаг фронта (Vite)…"
 if [ "${DEPLOY_BUILD_FRONT:-1}" != "0" ] && command -v npm >/dev/null 2>&1; then
   if [ -z "${VITE_API_BASE_URL:-}" ]; then
     echo "remote-update: фронт НЕ собран: в $ROOT/.env нет VITE_API_BASE_URL=... (нужен URL API, напр. https://api.example.com). Интерфейс на сайте не обновится, пока не зададите и не пересоберёте." >&2
   else
     echo "remote-update: сборка фронта (npm ci && npm run build), API в бандле: ${VITE_API_BASE_URL}"
-    # На серверах часто NODE_ENV=production — тогда npm ci не ставит devDependencies (typescript, vite), и падает tsc/vite.
+    # NODE_ENV=production ломает npm ci (нет typescript/vite в prod deps).
     (
       cd front
       export NODE_ENV=development

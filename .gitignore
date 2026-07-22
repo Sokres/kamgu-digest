@@ -12,6 +12,9 @@ __pycache__/
 *.log
 .DS_Store
 
+.cursor/
+.qodo/
+
 # Локальные данные (снимки SQLite, загруженные PDF/кэш — не для репозитория)
 *.db
 backend/data/

@@ -41,7 +41,6 @@ export type LlmPresetId =
   | 'or_llama33_70b'
   | 'custom'
 
-/** Как устроена оплата у провайдера для типового сценария с нашим пресетом (без карты / платный API и т.д.). */
 export type LlmPresetPricing = 'free_local' | 'free_quota' | 'paid' | 'depends'
 
 export const LLM_PRESET_PRICING_LABEL: Record<LlmPresetPricing, string> = {
@@ -279,7 +278,6 @@ export const LLM_PRESET_OPTIONS: LlmPresetOption[] = [
   },
 ]
 
-/** Текст подсказки про тарифы в настройках (общий для блока LLM). */
 export const LLM_PRESET_PRICING_LEGEND =
   'Бесплатно — без оплаты к модели (локально на вашей стороне). Бесплатный тариф — типичные квоты без списания по вашей карте зависят от провайдера. Платно — по условиям тарифа при наличии баланса или подписки. У части моделей есть суффикс :free на OpenRouter; произвольный идентификатор можно задать в своём пресете.'
 
@@ -287,12 +285,6 @@ function trimBase(url: string): string {
   return url.trim().replace(/\/+$/, '')
 }
 
-/**
- * URL сервиса по умолчанию, если в localStorage ничего не сохранено:
- * переменная сборки VITE_API_BASE_URL;
- * в dev — локальный хост для связки с отдельным процессом сервера (можно переопределить);
- * в продакшене — обычно тот же origin, что у страницы при обратном прокси.
- */
 export function getDefaultApiBaseUrl(): string {
   const env = import.meta.env.VITE_API_BASE_URL
   if (env && String(env).trim()) return trimBase(String(env))
@@ -389,7 +381,6 @@ export function setThemePreference(pref: ThemePreference): void {
   localStorage.setItem(STORAGE_THEME, pref)
 }
 
-/** Apply `.dark` on `document.documentElement` from saved preference. */
 export function applyThemeFromPreference(): void {
   const pref = getThemePreference()
   const root = document.documentElement
@@ -482,7 +473,6 @@ export function setLlmClientJsonMode(v: boolean): void {
   localStorage.setItem(STORAGE_LLM_JSON, v ? '1' : '0')
 }
 
-/** Заголовки BYOK для запросов дайджеста. */
 export function buildLlmClientHeaders(): Record<string, string> {
   const key = getLlmClientApiKey().trim()
   if (!key) return {}

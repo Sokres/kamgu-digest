@@ -13,8 +13,6 @@ logger = logging.getLogger(__name__)
 
 TAVILY_URL = "https://api.tavily.com/search"
 
-# Домены по умолчанию для «только научные источники» (Tavily include_domains).
-# Можно переопределить через TAVILY_INCLUDE_DOMAINS в .env (через запятую).
 DEFAULT_SCHOLARLY_DOMAINS: list[str] = [
     "arxiv.org",
     "pubmed.ncbi.nlm.nih.gov",

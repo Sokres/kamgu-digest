@@ -87,7 +87,6 @@ async function authRefreshRaw(baseUrl: string, refreshToken: string, signal?: Ab
   return r.json() as Promise<AuthTokenResponse>
 }
 
-/** Обновление пары токенов (например из AuthContext); не использует очередь повторов API. */
 export async function authRefresh(
   baseUrl: string,
   refreshToken: string,
@@ -118,9 +117,6 @@ async function runRefreshSession(baseUrl: string): Promise<boolean> {
   return refreshInFlight
 }
 
-/**
- * Повтор запроса после 401, если в браузере есть refresh-токен (один раз).
- */
 async function fetchWithAuthRetry(baseUrl: string, exec: () => Promise<Response>): Promise<Response> {
   const r = await exec()
   if (r.status !== 401 || !getRefreshToken().trim()) {
@@ -156,7 +152,6 @@ function apiHeaders(
   }
 }
 
-/** Только Bearer (тренды, /auth/me и т.д.). */
 function authOnlyHeaders(options?: { accessToken?: string }): Record<string, string> {
   return bearerHeaders(options)
 }

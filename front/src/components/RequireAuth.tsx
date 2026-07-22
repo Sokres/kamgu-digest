@@ -2,7 +2,6 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom'
 
 import { useAuth } from '@/context/AuthContext'
 
-/** При AUTH_ENABLED на сервере перенаправляет на /login, пока нет токена. */
 export function RequireAuth() {
   const { loading, authEnabled, isAuthenticated } = useAuth()
   const location = useLocation()

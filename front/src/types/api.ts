@@ -1,5 +1,3 @@
-/** Mirrors backend/digest/models.py */
-
 export type DigestMode = 'peer_reviewed' | 'web_snippets'
 
 export interface ConceptRef {
@@ -19,15 +17,10 @@ export interface DigestRequest {
   peer_reviewed_only?: boolean
   openalex_concept_id?: string | null
   openalex_source_ids?: string[]
-  /** Только для web_snippets: ограничить Tavily научными доменами (по умолчанию true) */
   web_scholarly_sources_only?: boolean
-  /** Доп. ключевые слова к запросу Tavily */
   web_search_additional_terms?: string[]
-  /** Id из POST /documents/pdf; учитываются в peer_reviewed */
   attached_document_ids?: string[]
-  /** Скачать OA PDF по DOI (Unpaywall), извлечь текст для LLM; нужен email на сервере */
   fetch_oa_fulltext?: boolean
-  /** Принудительно двухэтапный LLM (карта по статьям + сводка) */
   deep_digest?: boolean
 }
 
@@ -60,16 +53,11 @@ export interface DigestMeta {
   candidates_openalex?: number
   candidates_semantic_scholar?: number
   candidates_core?: number
-  /** Уникальных DOI, обогащённых через Crossref */
   crossref_enriched_dois?: number
   web_snippets_used?: number
-  /** Применён ли фильтр include_domains (научные сайты) */
   web_scholarly_domain_filter?: boolean
-  /** Загруженных PDF в кандидатах (peer_reviewed) */
   user_pdf_documents?: number
-  /** Работ с расширенным текстом из OA PDF */
   oa_fulltext_fetched?: number
-  /** Использован двухэтапный LLM */
   two_stage_llm?: boolean
   after_dedupe?: number
   used_for_llm?: number
@@ -196,12 +184,10 @@ export interface MonthlyDigestResponse {
   meta?: MonthlyDigestMeta
 }
 
-/** GET /trends/profiles */
 export interface TrendProfileSummary {
   user_id?: string
   profile_id: string
   snapshot_count: number
-  /** Нет снимков — null */
   last_period?: string | null
   last_created_at?: string | null
   topic_queries: string[]
@@ -210,7 +196,6 @@ export interface TrendProfileSummary {
   note?: string
 }
 
-/** POST /trends/profiles */
 export interface DigestProfileCreateBody {
   display_name: string
   note?: string
@@ -223,7 +208,6 @@ export interface DigestProfileCreated {
   created_at: string
 }
 
-/** GET /trends/profiles/:id/snapshots/:period */
 export interface TrendSnapshotDetail {
   profile_id: string
   period: string
@@ -251,7 +235,6 @@ export interface SnapshotWorkRecord {
   concepts?: ConceptRef[]
 }
 
-/** GET /trends/profiles/:id/series */
 export interface TrendSeriesPoint {
   period: string
   created_at: string
@@ -302,7 +285,6 @@ export interface TrendLatestSnapshotSummary {
   structured_delta?: MonthlyStructuredDelta | null
 }
 
-/** GET /trends/profiles/:id/highlights */
 export interface TrendHighlightsResponse {
   profile_id: string
   topic_queries: string[]
@@ -311,7 +293,6 @@ export interface TrendHighlightsResponse {
   concept_evolution: TrendConceptEvolutionPoint[]
 }
 
-/** POST /trends/profiles/:id/analysis */
 export interface TrendAnalysisResponse {
   profile_id: string
   analyzed_through_period?: string | null
@@ -323,13 +304,11 @@ export interface TrendAnalysisResponse {
   snapshot_count: number
 }
 
-/** PUT /trends/profiles/:id/label */
 export interface TrendProfileLabelUpdate {
   display_name: string
   note?: string
 }
 
-/** GET/POST/PATCH/DELETE /digests/schedules */
 export interface PeriodicDigestScheduleOut {
   id: string
   user_id?: string
@@ -356,7 +335,6 @@ export interface PeriodicDigestScheduleOut {
   last_error?: string | null
 }
 
-/** GET /digests/schedules/:id/runs */
 export interface DigestScheduleRunOut {
   id: string
   schedule_id: string

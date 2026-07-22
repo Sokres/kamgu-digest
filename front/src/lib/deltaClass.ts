@@ -1,6 +1,5 @@
 import { cn } from '@/lib/utils'
 
-/** Semantic color for signed deltas; not color-only — caller should still show sign. */
 export function deltaSignedClass(value: number | null | undefined): string {
   if (value == null || value === 0 || Number.isNaN(value)) {
     return 'text-muted-foreground tabular-nums'

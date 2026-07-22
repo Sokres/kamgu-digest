@@ -1,6 +1,6 @@
 # Браузерный UI для KamGU Research Digest
 
-**Vite + React + TypeScript + shadcn/ui** (preset из `npx shadcn@latest init --preset b1FkdNWmh --template vite` — после первого скана проект дополнен Tailwind и alias; при необходимости переинициализируйте shadcn в этой папке).
+**Vite + React + TypeScript + shadcn/ui** (Tailwind, alias `@/` — см. `components.json`).
 
 ## Запуск вместе с бэкендом
 

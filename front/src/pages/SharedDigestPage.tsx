@@ -55,7 +55,6 @@ function SharedDigestContent(props: { token: string; apiBase: string }) {
   )
 }
 
-/** Публичная страница по ссылке: /shared/digest/:token (без входа в приложение). */
 export function SharedDigestPage() {
   const { token } = useParams<{ token: string }>()
   const apiBase = getApiBaseUrl()
