@@ -234,6 +234,16 @@ def _strip_json_fence(text: str) -> str:
     return t
 
 
+def _parse_llm_json(raw: str) -> dict[str, Any]:
+    text = raw.strip()
+    if not text:
+        raise json.JSONDecodeError("Empty LLM JSON", text, 0)
+    data = json.loads(text, strict=False)
+    if not isinstance(data, dict):
+        raise ValueError("LLM JSON root must be an object")
+    return data
+
+
 def _abstract_chars_limit(p: PublicationInput) -> int:
     s = (p.source or "").lower()
     if s in ("user_pdf", "oa_fulltext"):
@@ -643,7 +653,7 @@ async def _chat_json_to_dict(system: str, user_payload: dict[str, Any]) -> dict[
         time.perf_counter() - t_llm0,
     )
     try:
-        return json.loads(raw)
+        return _parse_llm_json(raw)
     except json.JSONDecodeError as e:
         logger.error("LLM returned invalid JSON: %s", e)
         raise

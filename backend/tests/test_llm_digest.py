@@ -10,8 +10,20 @@ from pipeline.llm import (
     _estimate_digest_payload_chars,
     _finalize_digest_result,
     _merge_map_summaries_into_cards,
+    _parse_llm_json,
     _pub_dict,
 )
+
+
+def test_parse_llm_json_allows_literal_newlines_in_strings() -> None:
+    raw = (
+        '{"overview_ru": "строка 1\nстрока 2", '
+        '"overview_en": "line 1\nline 2", '
+        '"digest_ru": "## Обзор", "digest_en": "", "article_cards": []}'
+    )
+    data = _parse_llm_json(raw)
+    assert data["overview_ru"] == "строка 1\nстрока 2"
+    assert data["overview_en"] == "line 1\nline 2"
 
 
 def test_abstract_text_kind() -> None:

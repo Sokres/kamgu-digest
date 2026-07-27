@@ -1,3 +1,4 @@
+import json
 import logging
 import sqlite3
 
@@ -27,6 +28,14 @@ async def execute_digest(body: DigestRequest, document_user_id: str | None = Non
         )
     try:
         return await run_digest(body, document_user_id=document_user_id)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Модель вернула некорректный JSON. Обычно помогает повтор запроса или смена OPENAI_MODEL "
+                "(бесплатные маршруты OpenRouter иногда обрывают ответ)."
+            ),
+        )
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except RateLimitError as e:
@@ -86,6 +95,13 @@ async def execute_monthly_digest(body: MonthlyDigestRequest, user_id: str) -> Mo
         ) from e
     try:
         return await run_monthly_digest(body, user_id=user_id)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Модель вернула некорректный JSON. Обычно помогает повтор запроса или смена OPENAI_MODEL."
+            ),
+        )
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except RateLimitError as e:
