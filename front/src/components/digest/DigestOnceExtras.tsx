@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError, createDigest, uploadPdfDocument } from '@/lib/api'
+import { resolveDigestConnectionError } from '@/lib/digestConnectionError'
 import type { DigestFormState } from '@/hooks/useDigestFormState'
 import type { DigestRequest, DigestResponse } from '@/types/api'
 
@@ -92,8 +93,11 @@ export function DigestOnceExtras({ apiBase, form, onResult, loading, setLoading 
     } catch (err) {
       let msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err)
       if (err instanceof ApiError && err.status === 0) {
-        msg =
-          'Соединение с API оборвалось до ответа. На сервере дайджest часто считается 3–7 минут — уменьшите «Макс. найденных статей» до 30, не закрывайте вкладку и повторите.'
+        const resolved = resolveDigestConnectionError(form.maxCandidates)
+        if (resolved.nextMaxCandidates) {
+          form.setMaxCandidates(resolved.nextMaxCandidates)
+        }
+        msg = resolved.message
       }
       setError(msg)
       onResult(null, null, msg)

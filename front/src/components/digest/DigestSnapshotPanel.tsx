@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ApiError, createMonthlyDigest, createTrendProfile } from '@/lib/api'
+import { resolveDigestConnectionError } from '@/lib/digestConnectionError'
 import type { DigestFormState } from '@/hooks/useDigestFormState'
 import { forcePeriodHint, forcePeriodPlaceholder, periodModeLabel } from '@/lib/periodMode'
 import { getMonthlyInternalKey } from '@/lib/settings'
@@ -88,7 +89,14 @@ export function DigestSnapshotPanel({
       setLastMeta(res.meta ?? null)
       onResult(res, null)
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err)
+      let msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err)
+      if (err instanceof ApiError && err.status === 0) {
+        const resolved = resolveDigestConnectionError(form.maxCandidates)
+        if (resolved.nextMaxCandidates) {
+          form.setMaxCandidates(resolved.nextMaxCandidates)
+        }
+        msg = resolved.message
+      }
       setError(msg)
       onResult(null, msg)
     } finally {

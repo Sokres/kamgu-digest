@@ -29,7 +29,7 @@ class DigestRequest(BaseModel):
         "peer_reviewed",
         description="peer_reviewed: OpenAlex/Semantic Scholar. web_snippets: веб-поиск (сниппеты), отдельный дисклеймер.",
     )
-    max_candidates: int = Field(100, ge=10, le=200)
+    max_candidates: int = Field(30, ge=10, le=200)
     top_n_for_llm: int = Field(20, ge=3, le=40)
     from_year: int | None = Field(None, description="Минимальный год публикации")
     to_year: int | None = Field(None, description="Максимальный год публикации")
@@ -305,7 +305,7 @@ class MonthlyDigestRequest(BaseModel):
         min_length=1,
         description="Как у /digests — строки для поиска и скоринга.",
     )
-    max_candidates: int = Field(100, ge=10, le=200)
+    max_candidates: int = Field(30, ge=10, le=200)
     top_n_for_llm: int = Field(20, ge=3, le=40)
     trend_top_k: int = Field(
         20,
@@ -436,7 +436,7 @@ class PeriodicDigestScheduleParams(BaseModel):
     web_search_additional_terms: list[str] = Field(default_factory=list)
     fetch_oa_fulltext: bool = False
     deep_digest: bool = False
-    max_candidates: int = Field(100, ge=10, le=200)
+    max_candidates: int = Field(30, ge=10, le=200)
     top_n_for_llm: int = Field(20, ge=3, le=40)
     trend_top_k: int = Field(20, ge=5, le=60)
     from_year: int | None = Field(None, description="Минимальный год публикации")
@@ -471,7 +471,7 @@ class PeriodicDigestScheduleCreate(BaseModel):
     web_search_additional_terms: list[str] = Field(default_factory=list)
     fetch_oa_fulltext: bool = False
     deep_digest: bool = False
-    max_candidates: int = Field(100, ge=10, le=200)
+    max_candidates: int = Field(30, ge=10, le=200)
     top_n_for_llm: int = Field(20, ge=3, le=40)
     trend_top_k: int = Field(20, ge=5, le=60)
     from_year: int | None = None
