@@ -114,7 +114,7 @@ export function DigestOnceExtras({ apiBase, form, onResult, loading, setLoading 
             <div className="space-y-1">
               <h2 className="text-lg font-semibold tracking-tight">Быстрый дайджест</h2>
               <p className="text-sm text-muted-foreground">
-                На сервере обычно 3–7 минут при 30 статьях; при 100 — дольше. Не закрывайте вкладку до результата.
+                На сервере обычно 3–7 минут при 30 статьях. Можно закрыть вкладку — расчёт идёт на сервере, статус обновляется автоматически.
               </p>
             </div>
             <Button type="submit" disabled={loading} size="lg" className="min-w-[220px]">

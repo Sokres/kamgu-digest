@@ -194,6 +194,23 @@ class DigestResponse(BaseModel):
     meta: DigestMeta = Field(default_factory=DigestMeta)
 
 
+DigestJobState = Literal["queued", "running", "done", "failed"]
+
+
+class DigestJobCreated(BaseModel):
+    job_id: str
+    status: DigestJobState = "queued"
+
+
+class DigestJobStatusOut(BaseModel):
+    job_id: str
+    status: DigestJobState
+    error: str | None = None
+    error_status: int | None = None
+    result: DigestResponse | None = None
+    elapsed_seconds: float | None = None
+
+
 class SavedDigestEnvelope(BaseModel):
     """Тело payload_json в saved_digests."""
 

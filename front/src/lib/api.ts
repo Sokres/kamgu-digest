@@ -2,6 +2,9 @@ import type {
   AuthMeResponse,
   AuthStatusResponse,
   AuthTokenResponse,
+  DigestJobCreated,
+  DigestJobState,
+  DigestJobStatusOut,
   DigestProfileCreated,
   DigestProfileCreateBody,
   DigestRequest,
@@ -467,7 +470,28 @@ export async function fetchScheduleRuns(
   return r.json() as Promise<DigestScheduleRunOut[]>
 }
 
-export async function createDigest(
+const DIGEST_JOB_POLL_MS = 3000
+const DIGEST_JOB_MAX_WAIT_MS = 20 * 60 * 1000
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'))
+      return
+    }
+    const timer = setTimeout(resolve, ms)
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer)
+        reject(new DOMException('Aborted', 'AbortError'))
+      },
+      { once: true },
+    )
+  })
+}
+
+async function createDigestDirect(
   baseUrl: string,
   body: DigestRequest,
   options?: { signal?: AbortSignal; accessToken?: string },
@@ -491,6 +515,86 @@ export async function createDigest(
   }
   if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
   return r.json() as Promise<DigestResponse>
+}
+
+async function pollDigestJob(
+  baseUrl: string,
+  jobId: string,
+  options?: {
+    signal?: AbortSignal
+    accessToken?: string
+    onProgress?: (status: DigestJobState) => void
+  },
+): Promise<DigestResponse> {
+  const deadline = Date.now() + DIGEST_JOB_MAX_WAIT_MS
+  while (Date.now() < deadline) {
+    await sleep(DIGEST_JOB_POLL_MS, options?.signal)
+    let r: Response
+    try {
+      r = await fetchWithAuthRetry(baseUrl, () =>
+        fetch(`${baseUrl}/digests/jobs/${encodeURIComponent(jobId)}`, {
+          headers: {
+            ...bearerHeaders(options),
+            ...buildLlmClientHeaders(),
+          },
+          signal: options?.signal,
+        }),
+      )
+    } catch (e) {
+      mapFetchError(e)
+    }
+    if (r.status === 404) {
+      throw new ApiError('Задача дайджеста не найдена на сервере.', 404)
+    }
+    if (!r.ok) throw new ApiError(await parseFastApiDetail(r), r.status)
+    const data = (await r.json()) as DigestJobStatusOut
+    options?.onProgress?.(data.status)
+    if (data.status === 'done' && data.result) {
+      return data.result
+    }
+    if (data.status === 'failed') {
+      throw new ApiError(data.error?.trim() || 'Ошибка формирования дайджеста.', data.error_status ?? 503)
+    }
+  }
+  throw new ApiError(
+    'Превышено время ожидания дайджеста (20 мин). Проверьте логи API на сервере.',
+    504,
+  )
+}
+
+export async function createDigest(
+  baseUrl: string,
+  body: DigestRequest,
+  options?: {
+    signal?: AbortSignal
+    accessToken?: string
+    onProgress?: (status: DigestJobState) => void
+  },
+): Promise<DigestResponse> {
+  let created: Response
+  try {
+    created = await fetchWithAuthRetry(baseUrl, () =>
+      fetch(`${baseUrl}/digests/jobs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...bearerHeaders(options),
+          ...buildLlmClientHeaders(),
+        },
+        body: JSON.stringify(body),
+        signal: options?.signal,
+      }),
+    )
+  } catch (e) {
+    mapFetchError(e)
+  }
+  if (created.status === 404) {
+    return createDigestDirect(baseUrl, body, options)
+  }
+  if (!created.ok) throw new ApiError(await parseFastApiDetail(created), created.status)
+  const job = (await created.json()) as DigestJobCreated
+  options?.onProgress?.(job.status)
+  return pollDigestJob(baseUrl, job.job_id, options)
 }
 
 export async function uploadPdfDocument(

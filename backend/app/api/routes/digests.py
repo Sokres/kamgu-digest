@@ -1,6 +1,15 @@
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException
 
-from digest.models import DigestRequest, DigestResponse, MonthlyDigestRequest, MonthlyDigestResponse
+from digest.digest_jobs import capture_llm_override, get_digest_job, job_elapsed_seconds, start_digest_job
+from digest.llm_override import effective_llm_api_key
+from digest.models import (
+    DigestJobCreated,
+    DigestJobStatusOut,
+    DigestRequest,
+    DigestResponse,
+    MonthlyDigestRequest,
+    MonthlyDigestResponse,
+)
 from app.api.deps import (
     TokenUser,
     llm_client_override_dependency,
@@ -11,6 +20,43 @@ from app.api.deps import (
 from app.services.digest_http import execute_digest, execute_monthly_digest
 
 router = APIRouter(tags=["digests"])
+
+
+@router.post("/digests/jobs", response_model=DigestJobCreated, status_code=202)
+async def create_digest_job(
+    body: DigestRequest,
+    _: None = Depends(verify_digest_rate_limit),
+    __: None = Depends(llm_client_override_dependency),
+    auth_user: TokenUser | None = Depends(require_user_when_auth_enabled),
+) -> DigestJobCreated:
+    if not effective_llm_api_key():
+        raise HTTPException(
+            status_code=503,
+            detail="Укажите ключ LLM в .env на сервере или передайте свой ключ заголовком X-Kamgu-Llm-Key.",
+        )
+    doc_uid = auth_user.id if auth_user else None
+    llm_override = capture_llm_override()
+    job = await start_digest_job(body, document_user_id=doc_uid, llm_override=llm_override)
+    return DigestJobCreated(job_id=job.id, status=job.status)
+
+
+@router.get("/digests/jobs/{job_id}", response_model=DigestJobStatusOut)
+async def get_digest_job_status(
+    job_id: str,
+    auth_user: TokenUser | None = Depends(require_user_when_auth_enabled),
+) -> DigestJobStatusOut:
+    doc_uid = auth_user.id if auth_user else None
+    job = get_digest_job(job_id.strip(), doc_uid)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Задача не найдена или недоступна.")
+    return DigestJobStatusOut(
+        job_id=job.id,
+        status=job.status,
+        error=job.error,
+        error_status=job.error_status,
+        result=job.result,
+        elapsed_seconds=job_elapsed_seconds(job),
+    )
 
 
 @router.post("/digests", response_model=DigestResponse)

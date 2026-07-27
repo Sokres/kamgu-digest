@@ -73,6 +73,22 @@ export interface DigestResponse {
   meta?: DigestMeta
 }
 
+export type DigestJobState = 'queued' | 'running' | 'done' | 'failed'
+
+export interface DigestJobCreated {
+  job_id: string
+  status: DigestJobState
+}
+
+export interface DigestJobStatusOut {
+  job_id: string
+  status: DigestJobState
+  error?: string | null
+  error_status?: number | null
+  result?: DigestResponse | null
+  elapsed_seconds?: number | null
+}
+
 export interface SavedDigestListItem {
   id: string
   title: string
